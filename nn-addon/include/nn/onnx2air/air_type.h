@@ -30,6 +30,10 @@ public:
   TYPE_PTR Create_struct_type(TYPE_PTR fld_ty);
   TYPE_PTR Convert_tensor_type(const onnx::TensorProto& tensor);
   TYPE_PTR Convert_io_tensor_type(onnx::ValueInfoProto& vi);
+  bool     ShouldChunkTensor(TYPE_PTR tensor_type);
+  int      GetNumChannels(TYPE_PTR tensor_type);
+  int      CalculateChunksPerChannel(TYPE_PTR tensor_type);
+  
   int      Get_data_num_elements(onnx::TensorProto& tensor);
   AIRGEN*  Get_airgen() { return _airgen; }
 

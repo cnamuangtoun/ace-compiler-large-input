@@ -22,7 +22,7 @@ check_source_directory nn-addon
 check_source_directory fhe-cmplr
 
 # configure compiler with cmake
-cmake -S fhe-cmplr -B $build_dir -DFHE_WITH_SRC="air-infra;nn-addon" -DBUILD_UNITTEST=OFF -DAIR_BUILD_EXAMPLE=OFF -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=$build_type -DAIR_CODE_CHECK=OFF -DNN_CODE_CHECK=OFF -DFHE_CODE_CHECK=OFF
+cmake -S fhe-cmplr -B $build_dir -DFHE_WITH_SRC="air-infra;nn-addon" -DAIR_BUILD_TEST=OFF -DBUILD_UNITTEST=OFF -DAIR_BUILD_EXAMPLE=OFF -DBUILD_BENCH=OFF -DCMAKE_BUILD_TYPE=$build_type -DAIR_CODE_CHECK=OFF -DNN_CODE_CHECK=OFF -DFHE_CODE_CHECK=OFF
 if [ $? -ne 0 ]; then
   echo "Error: configure project with CMake failed."
   exit 1

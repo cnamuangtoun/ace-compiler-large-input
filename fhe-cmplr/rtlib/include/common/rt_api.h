@@ -31,6 +31,9 @@ void Finalize_context();
 //! implemented in vendor library
 void Prepare_input(TENSOR* input, const char* name);
 
+//! @brief Prepare input for images to big to fit one ciphertext for FHE kernel program
+void Prepare_input_large(TENSOR* input, const char* name);
+
 //! @brief Handle output from FHE kernel program
 //! implemented in vendor library
 double* Handle_output(const char* name);

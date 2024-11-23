@@ -7,7 +7,6 @@
 //=============================================================================
 
 #include "nn/onnx2air/air_type.h"
-
 #include "nn/onnx2air/air_gen.h"
 #include "nn/onnx2air/air_utils.h"
 #include "onnx.pb.h"
@@ -56,8 +55,62 @@ AIRTYGEN::Convert_io_tensor_type(onnx::ValueInfoProto& vi) {
     data_dim.push_back(dim_size);
   }
   if (tsp.dim().size() == 0) data_dim.push_back(1);
-  return Create_tensor_type(base_type_idx, data_dim, Get_airgen()->Get_glob());
+  TYPE_PTR tensor_type = Create_tensor_type(base_type_idx, data_dim, Get_airgen()->Get_glob());
+
+  int is_chunked;
+  if (ShouldChunkTensor(tensor_type)) {
+    is_chunked = 1;
+    tensor_type->Set_attr<int>("is_chunked", &is_chunked, 1);
+    
+    // Calculate chunking information
+    int num_channels = GetNumChannels(tensor_type);
+    tensor_type->Set_attr<int>("num_channels", &num_channels, 1);
+    int chunks_per_channel = CalculateChunksPerChannel(tensor_type);
+    tensor_type->Set_attr<int>("chunks_per_channel", &chunks_per_channel, 1);
+  } else {
+    is_chunked = 0;
+    tensor_type->Set_attr<int>("is_chunked", &is_chunked, 1);
+  }
+
+  return tensor_type;
 }
+
+bool AIRTYGEN::ShouldChunkTensor(TYPE_PTR tensor_type) {
+  // Calculate the total number of elements in the tensor
+  int total_elements = 1;
+  for (int dim_size : tensor_type->Cast_to_arr()->Shape()) {
+    total_elements *= dim_size;
+  }
+
+  int slot_capacity = 32768;
+
+  // Determine if chunking is necessary
+  return total_elements > slot_capacity;
+}
+
+int AIRTYGEN::GetNumChannels(TYPE_PTR tensor_type) {
+  // Assuming NCHW format, channel dimension is at index 1
+  const std::vector<long int> shape = tensor_type->Cast_to_arr()->Shape();
+  if (shape.size() > 1) {
+    return shape[1];
+  } else {
+    // Handle tensors without a channel dimension
+    return 1;
+  }
+}
+
+int AIRTYGEN::CalculateChunksPerChannel(TYPE_PTR tensor_type) {
+  int H = tensor_type->Cast_to_arr()->Shape()[2]; // Height
+  int W = tensor_type->Cast_to_arr()->Shape()[3]; // Width
+  int slot_capacity = 32768;
+  int rows_per_chunk = slot_capacity / W;
+
+  int num_channels = GetNumChannels(tensor_type);
+  int num_chunks_per_channel = (H + rows_per_chunk - 1) / rows_per_chunk;
+
+  return num_chunks_per_channel;
+}
+
 TYPE_PTR
 AIRTYGEN::Convert_tensor_type(const onnx::TensorProto& tensor) {
   int32_t          datatype      = tensor.data_type();

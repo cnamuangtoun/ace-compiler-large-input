@@ -57,25 +57,26 @@ bool AIRSTMTGEN::Convert_stmts(FUNC_SCOPE*       func_scope,
   return true;
 }
 
-bool AIRSTMTGEN::Get_node_input_tensors(onnx::NodeProto*       node,
-                                        std::vector<NODE_PTR>& inputs) {
+bool AIRSTMTGEN::Get_node_input_tensors(onnx::NodeProto* node, std::vector<NODE_PTR>& inputs) {
   FUNC_SCOPE* func_scope = Get_airgen()->Get_func_scope();
   CONTAINER*  cntr       = &func_scope->Container();
   SPOS        spos       = Get_airgen()->Get_glob()->Unknown_simple_spos();
-  for (auto tensor_name : node->input()) {
-    bool     input_resolved = false;
-    NAME_MAP st_ptr         = Get_airgen()->Sg().Get_result(tensor_name);
+
+  for (const auto& tensor_name : node->input()) {
+    NAME_MAP st_ptr = Get_airgen()->Sg().Get_result(tensor_name);
     if (st_ptr.Is_cst()) {
-      input_resolved = true;
       inputs.push_back(cntr->New_ldc(st_ptr.Cst(), spos));
     } else if (st_ptr.Is_sym()) {
-      input_resolved = true;
       inputs.push_back(cntr->New_ld(st_ptr.Sym(), spos));
     } else if (st_ptr.Is_preg()) {
-      input_resolved = true;
       inputs.push_back(cntr->New_ldp(st_ptr.Preg(), spos));
-    }
-    if (input_resolved == false) {
+    } else if (st_ptr.Is_sym_list()) {
+      // Handle chunked parameters
+      const auto& sym_list = st_ptr.Sym_list();
+      for (const auto& sym : sym_list) {
+        inputs.push_back(cntr->New_ld(sym, spos));
+      }
+    } else {
       return false;
     }
   }
@@ -484,12 +485,17 @@ void AIRSTMTGEN::Update_attributes_for_flatten(NODE_PTR node) {
   Set_attribute_int("axis", node);
 }
 
-void AIRSTMTGEN::Create_node_for_conv(CONTAINER*             cntr,
+void AIRSTMTGEN::Create_node_for_conv(CONTAINER* cntr,
                                       std::vector<NODE_PTR>& input,
                                       const SPOS& spos, NODE_PTR& op_node) {
+  // Combine input[0] and input[1] into a single node
+  NODE_PTR combined_input_node = cntr->New_bin_arith(
+      air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT), input[0], input[1], spos);
+
+  // Create the convolution node using the combined input
   op_node = cntr->New_tern_arith(
-      air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV), input[0],
-      input[1], input[2], spos);
+      air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV),
+      combined_input_node, input[2], input[3], spos);
 }
 
 void AIRSTMTGEN::Parse_attributes_for_conv(onnx::NodeProto* node) {

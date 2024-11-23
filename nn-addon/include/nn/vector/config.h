@@ -18,12 +18,13 @@ namespace vector {
 struct VECTOR_CONFIG : public air::util::COMMON_CONFIG {
 public:
   VECTOR_CONFIG(void)
-      : _gemm_fast(false), _conv_fast(false), _improve_ss_insert(false) {}
+      : _gemm_fast(false), _conv_fast(false), _improve_ss_insert(false), _toeplitz(false) {}
 
   void Register_options(air::driver::DRIVER_CTX* ctx);
   void Update_options();
   bool Conv_fast(void) const { return _conv_fast; }
   bool Gemm_fast(void) const { return _gemm_fast; }
+  bool Toeplitz(void) const { return _toeplitz; }
 
   void Print(std::ostream& os) const;
 
@@ -35,6 +36,7 @@ public:
 
   bool _conv_fast;
   bool _gemm_fast;
+  bool _toeplitz;
 
   bool _ref_validate;
 };  // struct VECTOR_CONFIG
@@ -45,6 +47,7 @@ public:
   bool Ref_validate() const { return cfg.Ref_validate(); }           \
   bool Conv_fast() const { return cfg.Conv_fast(); }                 \
   bool Gemm_fast() const { return cfg.Gemm_fast(); }                 \
+  bool Toeplitz() const { return cfg.Toeplitz(); }                   \
   DECLARE_COMMON_CONFIG_ACCESS_API(cfg)
 
 #define DECLARE_VECTOR_CONFIG(name, config)                         \
@@ -55,24 +58,34 @@ public:
    air::util::K_NONE,                                               \
    0,                                                               \
    air::util::V_NONE},                                              \
-      {"ref_validate",                                              \
-       "rfv",                                                       \
-       "runtime validation with reference in " #name,               \
-       &config._ref_validate,                                       \
-       air::util::K_NONE,                                           \
-       0,                                                           \
-       air::util::V_NONE},                                          \
-      {"conv_fast",                                                 \
-       "conv_fast",                                                 \
-       "Conv-fast lowering strategy " #name,                        \
-       &config._conv_fast,                                          \
-       air::util::K_NONE,                                           \
-       0,                                                           \
-       air::util::V_NONE},                                          \
-  {                                                                 \
-    "gemm_fast", "gemm_fast", "Gemm-fast lowering strategy " #name, \
-        &config._gemm_fast, air::util::K_NONE, 0, air::util::V_NONE \
-  }
+      {"ref_validate",                                                \
+       "rfv",                                                         \
+       "Runtime validation with reference in " #name,                 \
+       &config._ref_validate,                                         \
+       air::util::K_NONE,                                             \
+       0,                                                             \
+       air::util::V_NONE},                                            \
+      {"conv_fast",                                                   \
+       "conv_fast",                                                   \
+       "Conv-fast lowering strategy in " #name,                       \
+       &config._conv_fast,                                            \
+       air::util::K_NONE,                                             \
+       0,                                                             \
+       air::util::V_NONE},                                            \
+      {"gemm_fast",                                                   \
+       "gemm_fast",                                                   \
+       "Gemm-fast lowering strategy in " #name,                       \
+       &config._gemm_fast,                                            \
+       air::util::K_NONE,                                             \
+       0,                                                             \
+       air::util::V_NONE},                                            \
+      {"toeplitz",                                                    \
+       "toeplitz",                                                    \
+       "Use Toeplitz convolution method in " #name,                   \
+       &config._toeplitz,                                             \
+       air::util::K_NONE,                                             \
+       0,                                                             \
+       air::util::V_NONE}
 
 }  // namespace vector
 }  // namespace nn

@@ -38,6 +38,8 @@ public:
                                std::vector<NAME_TYPE_PAIR>& param_node,
                                std::vector<NAME_TYPE_PAIR>& ret_node);
   CONSTANT_PTR Convert_init_sym(const onnx::TensorProto& tensor);
+  
+  int GetRowsPerChunk(TYPE_PTR type);
 
   NAME_MAP Get_result(const std::string name);
   void     Put_result(const std::string name, const NAME_MAP& res);
@@ -83,6 +85,7 @@ private:
   std::unordered_map<std::string, ADDR_DATUM_PTR> _st_map;
   std::unordered_map<std::string, PREG_PTR>       _preg_map;
   std::unordered_map<std::string, CONSTANT_PTR>   _cst_map;
+  std::unordered_map<std::string, std::vector<ADDR_DATUM_PTR>> _chunked_parameters;
 
   // the map between the output tensor name and the onnx constant operator
   std::unordered_map<std::string, CONSTANT_PTR> _onx_const_map;

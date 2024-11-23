@@ -1,0 +1,8 @@
+onnx/*
+ace_cmplr/*
+release/*
+cifar/*
+.vscode/*
+
+*/__pycache__/
+scripts/onnx2torch_run.py

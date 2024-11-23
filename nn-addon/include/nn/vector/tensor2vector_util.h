@@ -28,6 +28,16 @@ public:
                                const SPOS& spos);
   NODE_PTR New_gemm_metakernel_fast(NODE_PTR op0, NODE_PTR op1, NODE_PTR op2,
                                     const SPOS& spos, bool tiling);
+  // NODE_PTR New_gemm_metakernel_toeplitz(NODE_PTR op0, NODE_PTR op1, NODE_PTR op2, 
+  //                                       int output_height, int output_width,
+  //                                       int n1, int n2,
+  //                                       const std::vector<int>& ra,
+  //                                       const SPOS& spos);
+  NODE_PTR New_gemm_metakernel_toeplitz(NODE_PTR input, NODE_PTR weight, 
+                                        NODE_PTR bias, std::vector<int> ra,
+                                        int channel_in, int channel_out, 
+                                        int output_width, int output_height,
+                                        int kernel_hw, const SPOS& spos);
   NODE_PTR New_conv_metakernel(NODE_PTR input, NODE_PTR weight, NODE_PTR bias,
                                std::vector<int> ra, int channel_in,
                                int channel_out, int output_height,

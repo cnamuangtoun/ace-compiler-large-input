@@ -966,7 +966,7 @@ private:
 //! Base class for type data structures
 class TYPE_DATA {
 public:
-  TYPE_DATA(TYPE_TRAIT kind) : _spos(), _name(Null_st_id) {
+  TYPE_DATA(TYPE_TRAIT kind) : _spos(), _name(Null_st_id), _attr_id(Null_id) {
     _bit_size                     = 0;
     _domain_tag                   = 0;
     _alignment                    = static_cast<uint32_t>(DATA_ALIGN::BAD);
@@ -1005,6 +1005,8 @@ public:
     AIR_ASSERT(Kind() == T);
     return *static_cast<typename TYPE_DATA_TRAITS<T>::TYPE_DATA_TYPE*>(this);
   }
+
+  ATTR_ID _attr_id;
 
 protected:
   uint64_t _bit_size;

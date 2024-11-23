@@ -49,8 +49,25 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
 
   SIGNATURE_TYPE_PTR sig = glob->New_sig_type();
   for (auto arg : param_node) {
-    STR_PTR param_str = glob->New_str(arg._name.c_str());
-    glob->New_param(param_str, arg._ty_ptr, sig, spos);
+    TYPE_PTR type = arg._ty_ptr;
+    const int* is_chunked = type->Attr<int>("is_chunked");
+    if (*is_chunked) {
+      // Retrieve chunking information
+      const int* num_channels = type->Attr<int>("num_channels");
+      const int* chunks_per_channel = type->Attr<int>("chunks_per_channel");
+
+      // Create parameters for each chunk
+      for (int c = 0; c < *num_channels; ++c) {
+        for (int i = 0; i < *chunks_per_channel; ++i) {
+          std::string chunk_name = arg._name + "_channel_" + std::to_string(c) + "_chunk_" + std::to_string(i);
+          STR_PTR param_str = glob->New_str(chunk_name.c_str());
+          glob->New_param(param_str, type, sig, spos);
+        }
+      }
+    } else {
+      STR_PTR param_str = glob->New_str(arg._name.c_str());
+      glob->New_param(param_str, type, sig, spos);
+    }
   }
   sig->Set_complete();
 
@@ -62,10 +79,37 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
   STMT_PTR    entry_stmt = func_scope->Container().New_func_entry(spos);
   int         formal_idx = 0;
   for (auto arg : param_node) {
-    ADDR_DATUM_PTR formal = func_scope->Formal(formal_idx);
-    Put_result(arg._name, NAME_MAP::New_sym(formal));
-    _input_sts.push_back(formal);
-    ++formal_idx;
+    TYPE_PTR type = arg._ty_ptr;
+    const int* is_chunked = type->Attr<int>("is_chunked");
+    if (*is_chunked) {
+      // Retrieve chunking information
+      const int* num_channels = type->Attr<int>("num_channels");
+      const int* chunks_per_channel = type->Attr<int>("chunks_per_channel");
+
+      std::vector<ADDR_DATUM_PTR> chunked_formals;
+
+      // Create parameters for each chunk
+      for (int c = 0; c < *num_channels; ++c) {
+        for (int i = 0; i < *chunks_per_channel; ++i) {
+          ADDR_DATUM_PTR formal = func_scope->Formal(formal_idx);
+          std::string chunk_name = arg._name + "_channel_" + std::to_string(c) + "_chunk_" + std::to_string(i);
+          Put_result(chunk_name, NAME_MAP::New_sym(formal));
+          _input_sts.push_back(formal);
+          ++formal_idx;
+
+          // Store formal parameter for the original tensor name
+          chunked_formals.push_back(formal);
+        }
+      }
+
+      // Store the list of chunked formals under the original name
+      _chunked_parameters[arg._name] = chunked_formals;
+    } else {
+      ADDR_DATUM_PTR formal = func_scope->Formal(formal_idx);
+      Put_result(arg._name, NAME_MAP::New_sym(formal));
+      _input_sts.push_back(formal);
+      ++formal_idx;
+    }
   }
 
   for (auto ret : ret_node) {
@@ -88,6 +132,12 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
   }
 
   return func_scope;
+}
+
+int AIRSYMGEN::GetRowsPerChunk(TYPE_PTR type) {
+  int W = type->Cast_to_arr()->Shape()[3];
+  int slot_capacity = 32768;
+  return slot_capacity / W;
 }
 
 CONSTANT_PTR AIRSYMGEN::Get_cst(const std::string name) {
@@ -136,6 +186,13 @@ NAME_MAP AIRSYMGEN::Get_result(const std::string name) {
   PREG_PTR preg = Get_preg(name);
   if (preg != air::base::Null_ptr) return NAME_MAP::New_preg(preg);
 
+  // Check if the name corresponds to chunked parameters
+  auto it = _chunked_parameters.find(name);
+  if (it != _chunked_parameters.end()) {
+    return NAME_MAP::New_sym_list(it->second);
+  }
+
+  // Name not found
   return NAME_MAP::New_none();
 }
 

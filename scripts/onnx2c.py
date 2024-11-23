@@ -78,6 +78,7 @@ bool Validate_output_data_absolute_error(double *result, double *expect, int len
     printf("Value of PRINT_ALL: %s\n", print_all_str);
     print_all = true;
   }
+  print_all = true;
 
   const char* absolute_error_str = getenv("ABS_ERROR");
   double absolute_error = 0.0001;
@@ -117,6 +118,7 @@ bool Validate_output_data_relative_error(double *result, double *expect, int len
     printf("Value of PRINT_ALL: %s\n", print_all_str);
     print_all = true;
   }
+  print_all = true;
 
   const char* relative_error_str = getenv("REL_ERROR");
   double relative_error = 0.001;
@@ -217,7 +219,7 @@ def get_input_data(shape: list, input_type: InputType = InputType.RANDOM):
             up_val *= val
         input_data = torch.arange(0.0, up_val).reshape(shape)
     else:
-        input_data = torch.distributions.uniform.Uniform(-0.1, 0.1).sample(shape)
+        input_data = torch.distributions.normal.Normal(0.2, 0.5).sample(shape)
     return input_data
 
 
@@ -288,7 +290,7 @@ def generate_main_func(input_tensor: list):
     free_tensor_template = '  Free_tensor(%s);\n'
 
     prepare_context = "  Prepare_context();\n\n"
-    prepare_input_template = '  Prepare_input(%s, "%s");\n'
+    prepare_input_template = '  Prepare_input_large(%s, "%s");\n'
     return_stmt = "  return 0;"
 
     main_body = r'''  Run_main_graph();

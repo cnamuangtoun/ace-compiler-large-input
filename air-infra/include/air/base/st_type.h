@@ -12,6 +12,7 @@
 #include "air/base/st_data.h"
 #include "air/base/st_decl.h"
 #include "air/base/st_trait.h"
+#include "air/base/st_attr.h"
 
 namespace air {
 namespace base {
@@ -203,6 +204,12 @@ public:
 
   const char* Type_kind_name() const {
     return Type_kind_name_arr[static_cast<uint32_t>(Kind())];
+  }
+
+  DECLATR_ATTR_ACCESS_API(Attr_id(), (SCOPE_BASE*)_glob)
+
+  const ATTR_ID& Attr_id() const {
+    return _type->_attr_id;
   }
 
   bool Is_prim() const { return Kind() == TYPE_TRAIT::PRIMITIVE; }

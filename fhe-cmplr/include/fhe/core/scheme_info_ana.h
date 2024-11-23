@@ -298,6 +298,8 @@ public:
   template <typename RETV, typename VISITOR>
   RETV Handle_conv(VISITOR* visitor, air::base::NODE_PTR conv);
   template <typename RETV, typename VISITOR>
+  RETV Handle_conv_toeplitz(VISITOR* visitor, air::base::NODE_PTR node);
+  template <typename RETV, typename VISITOR>
   RETV Handle_flatten(VISITOR* visitor, air::base::NODE_PTR flatten);
   template <typename RETV, typename VISITOR>
   RETV Handle_gemm(VISITOR* visitor, air::base::NODE_PTR gemm);
@@ -362,10 +364,9 @@ RETV TENSOR_ANA_HANDLER::Handle_average_pool(VISITOR*            visitor,
 template <typename RETV, typename VISITOR>
 RETV TENSOR_ANA_HANDLER::Handle_conv(VISITOR*            visitor,
                                      air::base::NODE_PTR conv) {
-  // 1. update msg length of current function
+  // 1. Update message length of current function
   visitor->Context().Update_msg_len(Msg_len(conv));
-
-  // 2. cal and return mul_level of conv result
+  // 2. Calculate and return mul_level of conv result
   air::base::NODE_PTR data_child = conv->Child(0);
   uint32_t input_level = visitor->template Visit<RETV>(data_child).Mul_level();
   uint32_t mul_level_of_conv =
@@ -507,6 +508,21 @@ RETV TENSOR_ANA_HANDLER::Handle_sub(VISITOR* visitor, air::base::NODE_PTR sub) {
   // mul_level of sub result is the bigger one of mul_level0 and mul_level1
   uint32_t mul_level = std::max(mul_level0, mul_level1);
   return RETV(mul_level);
+}
+
+template <typename RETV, typename VISITOR>
+RETV TENSOR_ANA_HANDLER::Handle_conv_toeplitz(VISITOR* visitor, air::base::NODE_PTR conv) {
+  // 1. Update message length of current function
+  visitor->Context().Update_msg_len(Msg_len(conv));
+  std::cout << "Analyze conv toe\n";
+  // 2. Calculate and return mul_level of Toeplitz convolution result
+  air::base::NODE_PTR data_child = conv->Child(0);
+  uint32_t input_level = visitor->template Visit<RETV>(data_child).Mul_level();
+
+  // Since Toeplitz convolution is transformed into GEMM
+  uint32_t mul_level_of_conv = input_level + Mul_level_of_tensor_op(nn::core::OPC_GEMM);
+
+  return RETV(mul_level_of_conv);
 }
 
 //! Analyzer of scheme info, of which input is TENSOR IR.

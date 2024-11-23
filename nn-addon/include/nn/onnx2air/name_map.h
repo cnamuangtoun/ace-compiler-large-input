@@ -15,7 +15,7 @@
 namespace nn {
 namespace onnx2air {
 
-enum RK { R_NONE, R_SYM, R_PREG, R_CST };
+enum RK { R_NONE, R_SYM, R_PREG, R_CST, R_SYM_LIST };
 
 class NAME_MAP {
 private:
@@ -24,7 +24,8 @@ private:
   ADDR_DATUM_PTR _sym;
   PREG_PTR       _preg;
   CONSTANT_PTR   _cst;
-  uint16_t       _kind : 2;
+  std::vector<ADDR_DATUM_PTR> _sym_list;
+  uint16_t       _kind : 3;
 
   NAME_MAP(RK kind) { _kind = kind; }
   NAME_MAP(ADDR_DATUM_PTR sym) {
@@ -39,12 +40,17 @@ private:
     _kind = R_CST;
     _cst  = cst;
   }
+  NAME_MAP(const std::vector<ADDR_DATUM_PTR>& sym_list) {
+    _kind = R_SYM_LIST;
+    _sym_list = sym_list;
+  }
 
 public:
   static NAME_MAP New_none() { return NAME_MAP(R_NONE); }
   static NAME_MAP New_sym(ADDR_DATUM_PTR sym) { return NAME_MAP(sym); }
   static NAME_MAP New_preg(PREG_PTR preg) { return NAME_MAP(preg); }
   static NAME_MAP New_cst(CONSTANT_PTR cst) { return NAME_MAP(cst); }
+  static NAME_MAP New_sym_list(const std::vector<ADDR_DATUM_PTR>& sym_list) { return NAME_MAP(sym_list); }
 
   RK             Kind() const { return (RK)_kind; }
   ADDR_DATUM_PTR Sym() const {
@@ -59,11 +65,16 @@ public:
     AIR_ASSERT_MSG(_kind == R_CST, ("not constant"));
     return _cst;
   }
+  const std::vector<ADDR_DATUM_PTR>& Sym_list() const {
+    AIR_ASSERT_MSG(_kind == R_SYM_LIST, ("not a symbol list"));
+    return _sym_list;
+  }
 
   bool Is_none() const { return _kind == R_NONE; }
   bool Is_sym() const { return _kind == R_SYM; }
   bool Is_preg() const { return _kind == R_PREG; }
   bool Is_cst() const { return _kind == R_CST; }
+  bool Is_sym_list() const { return _kind == R_SYM_LIST; }
   NAME_MAP(const NAME_MAP& inp) {
     this->_kind = inp.Kind();
     switch (inp.Kind()) {
@@ -77,6 +88,9 @@ public:
         break;
       case R_CST:
         this->_cst = inp.Cst();
+        break;
+      case R_SYM_LIST:
+        this->_sym_list = inp.Sym_list();
         break;
     }
   }

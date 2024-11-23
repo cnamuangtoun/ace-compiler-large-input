@@ -25,8 +25,7 @@ VALUE_LIST* Pre_encode_scheme(TENSOR* image, DATA_SCHEME* scheme) {
   FOR_ALL_TENSOR_ELEM(image, n, c, h, w) {
     DCMPLX_VALUE_AT(res, idx) = TENSOR_ELEM(image, n, c, h, w);
     idx++;
-  }
-  IS_TRUE(idx == len, "invalid length of vector");
+  }  IS_TRUE(idx == len, "invalid length of vector");
   return res;
 }
 
@@ -51,6 +50,45 @@ void Prepare_input(TENSOR* input, const char* name) {
   Io_set_input(name, 0, ciph);
   Free_value_list(input_vec);
   Free_plaintext(plain);
+}
+
+void Prepare_input_large(TENSOR* input, const char* name) {
+  size_t C = TENSOR_C(input); // Number of channels
+  size_t H = TENSOR_H(input); // Height of the image
+  size_t W = TENSOR_W(input); // Width of the image
+
+  size_t slot_capacity = 32768;
+  size_t chunk_idx = 0;
+
+  for (size_t c = 0; c < C; ++c) { // Iterate over each channel
+    for (size_t h = 0; h < H; h += slot_capacity / W) { // Divide the height
+      size_t rows_to_process = (h + slot_capacity / W > H)
+                                    ? H - h
+                                    : slot_capacity / W;
+
+      size_t chunk_len = rows_to_process * W; // Number of elements in this chunk
+
+      VALUE_LIST* chunk_vec = Alloc_value_list(DCMPLX_TYPE, chunk_len);
+
+      size_t idx = 0;
+      for (size_t rh = 0; rh < rows_to_process; ++rh) {
+        for (size_t w = 0; w < W; ++w) {
+          DCMPLX_VALUE_AT(chunk_vec, idx++) = TENSOR_ELEM(input, 0, c, h + rh, w);
+        }
+      }
+
+      PLAINTEXT* plain = Alloc_plaintext();
+      ENCODE(plain, (CKKS_ENCODER*)Context->_encoder, chunk_vec);
+
+      CIPHER ciph = Alloc_ciphertext();
+      Encrypt_msg(ciph, (CKKS_ENCRYPTOR*)Context->_encryptor, plain);
+
+      Io_set_input(name, chunk_idx++, ciph);
+
+      Free_value_list(chunk_vec);
+      Free_plaintext(plain);
+    }
+  }
 }
 
 double* Handle_output(const char* name) {

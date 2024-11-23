@@ -222,14 +222,14 @@ void Get_im2col_kernel(FPVEC& weight, int c_in, int h, int w, int c_out, int kh,
             conv1_im2col_index[(i + c1 * (kh * kw)) % (c_in * kh * kw)][j] *
             weight[c1 * (c_in * kh * kw) +
                    (i + c1 * (kh * kw)) % (c_in * kh * kw)];
-        if (stride > 1) {
-          if ((ra[i % (kh * kw)] > 0) &&
-              (j >= h * w - stride * ra[i % (kh * kw)]))  // left
-            conv1_im2col_kernel[i][j + c1 * (h * w)] = 0;
-          if ((ra[i % (kh * kw)] < 0) &&
-              (j < -1 * stride * ra[i % (kh * kw)]))  // right
-            conv1_im2col_kernel[i][j + c1 * (h * w)] = 0;
-        }
+        // if (stride > 1) {
+        //   if ((ra[i % (kh * kw)] > 0) &&
+        //       (j >= h * w - stride * ra[i % (kh * kw)]))  // left
+        //     conv1_im2col_kernel[i][j + c1 * (h * w)] = 0;
+        //   if ((ra[i % (kh * kw)] < 0) &&
+        //       (j < -1 * stride * ra[i % (kh * kw)]))  // right
+        //     conv1_im2col_kernel[i][j + c1 * (h * w)] = 0;
+        // }
       }
     }
   }
