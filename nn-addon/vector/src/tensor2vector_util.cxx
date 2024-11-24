@@ -1114,15 +1114,17 @@ NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel(NODE_PTR op0, NODE_PTR op1,
 // }
 
 NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(
-    NODE_PTR input, NODE_PTR weight, NODE_PTR bias, std::vector<int> ra,
+    std::vector<NODE_PTR> inputs, NODE_PTR weight, NODE_PTR bias, std::vector<int> ra,
     int channel_in, int channel_out, int output_width, int output_height,
     int kernel_hw, const SPOS& spos) {
+
+//   NODE_PTR input = inputs[0];
   _ctx.Incr_num_vloop();
   GLOB_SCOPE* gscope = _cntr->Glob_scope();
   FUNC_SCOPE* fscope = _cntr->Parent_func_scope();
 
   _ctx.Trace_cmd(TF_LOWER, Trace_float_array, weight->Const(), "gemm weight_diag");
-
+  NODE_PTR input = inputs[0];
   // Get and check input type
   AIR_ASSERT_MSG(input->Rtype()->Is_array(), "conv input is not an array type");
   ARRAY_TYPE_PTR input_ty_arr = input->Rtype()->Cast_to_arr();

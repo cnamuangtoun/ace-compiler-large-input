@@ -33,7 +33,7 @@ public:
   //                                       int n1, int n2,
   //                                       const std::vector<int>& ra,
   //                                       const SPOS& spos);
-  NODE_PTR New_gemm_metakernel_toeplitz(NODE_PTR input, NODE_PTR weight, 
+  NODE_PTR New_gemm_metakernel_toeplitz(std::vector<NODE_PTR> inputs, NODE_PTR weight, 
                                         NODE_PTR bias, std::vector<int> ra,
                                         int channel_in, int channel_out, 
                                         int output_width, int output_height,

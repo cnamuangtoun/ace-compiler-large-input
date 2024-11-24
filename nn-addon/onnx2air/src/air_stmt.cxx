@@ -496,6 +496,10 @@ void AIRSTMTGEN::Create_node_for_conv(CONTAINER* cntr,
   op_node = cntr->New_tern_arith(
       air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV),
       combined_input_node, input[2], input[3], spos);
+
+  // op_node = cntr->New_tern_arith(
+  //     air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV), input[0],
+  //     input[1], input[2], spos);
 }
 
 void AIRSTMTGEN::Parse_attributes_for_conv(onnx::NodeProto* node) {

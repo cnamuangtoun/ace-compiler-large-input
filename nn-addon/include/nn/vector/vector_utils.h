@@ -99,6 +99,14 @@ void Get_im2col_kernel(FPVEC& weight, int c_in, int h, int w, int c_out, int kh,
                        int kw, int padding, int stride, std::vector<int>& ra,
                        FPMAT& conv1_im2col_kernel);
 
+//
+void Construct_toeplitz_matrix_blocks(int c_i, int h_i, int w_i,
+                      FPVEC& kernel_weight, int k_h, int k_w, 
+                      int padding, int c_o, int num_input_blocks,
+                      std::vector<std::vector<std::vector<float>>>& T_blocks,
+                      std::vector<std::pair<int, int>>& output_block_indices,
+                      std::vector<std::pair<int, int>>& input_block_indices);
+
 //! @brief Clear invalid data in vector to zero with real padding(real
 //! padding!=0). Current impl of conv padding same no matter what real padding
 //! attribute is. Valid data and invalid data are separated by stride. Used only

@@ -206,16 +206,16 @@ public:
     AIR_ASSERT_MSG(real_pads.size() == 4, "conv padding size only support 4");
     ctx.Trace(TF_LOWER, "conv stride is ", real_strides[0], "\n");
     ctx.Trace(TF_LOWER, "conv padding is ", real_pads[0], "\n");
-    // if ((real_strides[0] > 1) && (real_pads[0] != 0)) {
-    //   Masking_padding_stride_data_in_mat(
-    //       channel_in * kernel_height * kernel_width, input_height, input_width,
-    //       channel_out, real_pads[0], real_strides[0], conv1_im2col_kernel);
-    // } else if (real_pads[0] == 0) {
-    //   Masking_no_padding_stride_data_in_mat(
-    //       channel_in * kernel_height * kernel_width, input_height, input_width,
-    //       kernel_height, kernel_width, channel_out, real_pads[0],
-    //       real_strides[0], conv1_im2col_kernel);
-    // }
+    if ((real_strides[0] > 1) && (real_pads[0] != 0)) {
+      Masking_padding_stride_data_in_mat(
+          channel_in * kernel_height * kernel_width, input_height, input_width,
+          channel_out, real_pads[0], real_strides[0], conv1_im2col_kernel);
+    } else if (real_pads[0] == 0) {
+      Masking_no_padding_stride_data_in_mat(
+          channel_in * kernel_height * kernel_width, input_height, input_width,
+          kernel_height, kernel_width, channel_out, real_pads[0],
+          real_strides[0], conv1_im2col_kernel);
+    }
 
     if ((channel_out >= channel_in) && ctx.Conv_fast()) {
       for (int i = 1; i < channel_in; i++) {
@@ -841,9 +841,6 @@ public:
     SPOS               spos     = node->Spos();
     CONST_TYPE_PTR     s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
 
-    ctx.Trace(TF_LOWER, "Begin Conv");
-    std::cout << "Begin Conv \n";
-
     // Get original conv2d input shape. Assuming NCHW&padding now.
     NODE_PTR orig_input = node->Child(0)->Child(0);
 
@@ -857,13 +854,14 @@ public:
       ctx.Trace(TF_LOWER, "Processing chunked input with ", *chunks_per_channel, " chunks per channel.\n");
       const int *num_channels = orig_input->Rtype()->Attr<int>("num_channels");
       
-      std::cout << "Collecting chunks... \n";
       input_chunks = CollectChunks<RETV>(node->Child(0), visitor);
 
       ctx.Trace(TF_LOWER, "Collected ", input_chunks.size(), " input chunks.\n");
     } else {
       ctx.Trace(TF_LOWER, "Input is not chunked.\n");
     }
+
+    int num_input_blocks = static_cast<int>(input_chunks.size());
 
     orig_input = input_chunks[0];
 
@@ -888,16 +886,30 @@ public:
     ctx.Trace(TF_LOWER, "conv kernel shape: [", channel_out, ", ", channel_in,
               ", ", kernel_height, ", ", kernel_width, "]\n");
 
-    NODE_PTR new_input1d = orig_input;
-    AIR_ASSERT_MSG(orig_input->Rtype()->Is_array(),
-                   "conv new_input is not an array type");
-    if (orig_input->Rtype()->Cast_to_arr()->Shape().size() > 1) {
-      ctx.Trace(TF_LOWER, "conv new_input is not 1D! Reshaping to 1D.\n");
-      ctx.Trace_cmd(TF_LOWER, Trace_node, orig_input);
-      //  Insert reshape input to 1D
-      std::vector<int64_t> input1d_shape(
-          1, channel_in * input_height * input_height);
-      new_input1d = vgen.New_reshape(orig_input, input1d_shape, spos);
+    std::vector<int> pads = Get_attr_int(node, "pads");
+    AIR_ASSERT_MSG(pads.size() == 4, "conv padding size only support 4");
+    int padding = pads[0];
+
+    std::vector<NODE_PTR> new_input1d_vec;
+
+    for (size_t i = 0; i < input_chunks.size(); ++i) {
+      NODE_PTR current_input = input_chunks[i];
+
+      // Get input shape
+      int64_t batch = 0, channel_in = 0, input_height = 0, input_width = 0;
+      Get_array_nchw(current_input->Rtype(), batch, channel_in, input_height, input_width);
+
+      ctx.Trace(TF_LOWER, "Processing chunk ", i, " with shape: [", batch, ", ", channel_in, ", ", input_height, ", ", input_width, "]\n");
+
+      AIR_ASSERT_MSG(batch == 1, "Conv only supports batch=1");
+
+      // Reshape input to 1D if necessary
+      NODE_PTR new_input1d = current_input;
+      if (current_input->Rtype()->Cast_to_arr()->Shape().size() > 1) {
+        ctx.Trace(TF_LOWER, "Chunk ", i, " is not 1D! Reshaping to 1D.\n");
+        std::vector<int64_t> input1d_shape(1, channel_in * input_height * input_width);
+        new_input1d_vec.push_back(vgen.New_reshape(current_input, input1d_shape, spos));
+      }
     }
 
     // transpose_im2col weight
@@ -908,95 +920,45 @@ public:
         cptr, cptr + channel_out * channel_in * kernel_height * kernel_width);
 
     int stride = 1;
-    // The following code just solves the second conv in LeNet.
-    // Get_num_op_ca_t2vsh() == 3 means conv(1)-avgpool(2)-conv(3)
-    // It's duplication length (ceil(16/6)*6*32*32) exceeds 32768
-    // due to "no gap handling" in avgpool.
-    // Need a whole analysis to handle this case.
-    // So Never modify the weight_pad code currently.
-    if (ctx.Improve_ss_insert() && (ctx.Get_num_op_ca_t2vsh() == 3)) {
-      stride = 2;
-      AIR_ASSERT_MSG(channel_in == 6, "for lenet second conv");
-      FPVEC weight_pad(
-          channel_out * (channel_in + 2) * kernel_height * kernel_width, 0);
-      for (int i = 0; i < channel_out; i++)
-        for (int j = 0; j < channel_in; j++)
-          for (int k = 0; k < kernel_height * kernel_width; k++)
-            weight_pad[i * (channel_in + 2) * kernel_height * kernel_width +
-                       j * kernel_height * kernel_width + k] =
-                weight[i * channel_in * kernel_height * kernel_width +
-                       j * kernel_height * kernel_width + k];
-      channel_in += 2;
-      weight = std::move(weight_pad);
-    }
     int64_t kernel_size = kernel_height * kernel_width;
-    // Handle case where channel_out%channel_in != 0
-    // weight cannot mul all input channel. So expand input and weight.
-    if ((channel_out >= channel_in) && ctx.Conv_fast() &&
-        channel_out % channel_in != 0) {
-      ctx.Trace(TF_LOWER, "channel_out%channel_in != 0 -> padding channel_in=",
-                channel_in, "\n");
-      int channel_in_new = channel_in;
-      while (channel_out % channel_in_new != 0) channel_in_new++;
-      ctx.Trace(TF_LOWER, "padding channel_in_new=", channel_in_new, "\n");
-      FPVEC weight_pad(channel_out * channel_in_new * kernel_size, 0);
-      for (int i = 0; i < channel_out; i++)
-        for (int j = 0; j < channel_in; j++)
-          for (int k = 0; k < kernel_size; k++)
-            weight_pad[i * channel_in_new * kernel_size + j * kernel_size + k] =
-                weight[i * channel_in * kernel_size + j * kernel_size + k];
-      channel_in = channel_in_new;
-      weight     = std::move(weight_pad);
-      ctx.Trace(TF_LOWER, "padding weight.size()=", weight.size(), "\n");
-    }
+    std::cout << "HERE1 \n";
 
-    FPMAT conv1_im2col_kernel(
-        channel_in * kernel_height * kernel_width,
-        FPVEC(channel_out * input_height * input_width, 0.0));
-    std::vector<int> ra(kernel_height * kernel_width, 0);
-    Get_im2col_kernel(weight, channel_in, input_height, input_width,
-                      channel_out, kernel_height, kernel_width, 1, stride, ra,
-                      conv1_im2col_kernel);
+    // std::vector<int> ra(kernel_height * kernel_width, 0);
+    std::vector<std::vector<FPVEC>> T_blocks;
+    std::vector<std::pair<int, int>> output_block_indices;
+    std::vector<std::pair<int, int>> input_block_indices;
 
-    std::vector<int> real_strides = Get_attr_int(node, "strides");
-    AIR_ASSERT_MSG(real_strides.size() == 2, "conv stride size only support 2");
-    AIR_ASSERT_MSG(real_strides[0] == real_strides[1],
-                   "the value of conv stride should be equal currently");
-    std::vector<int> real_pads = Get_attr_int(node, "pads");
-    AIR_ASSERT_MSG(real_pads.size() == 4, "conv padding size only support 4");
-    ctx.Trace(TF_LOWER, "conv stride is ", real_strides[0], "\n");
-    ctx.Trace(TF_LOWER, "conv padding is ", real_pads[0], "\n");
+    std::cout << "HERE2 \n";
 
-    if ((channel_out >= channel_in) && ctx.Conv_fast()) {
-      for (int i = 1; i < channel_in; i++) {
-        for (int j = 0; j < kernel_size; j++) {
-          rotate(conv1_im2col_kernel[i * kernel_size + j].begin(),
-                 conv1_im2col_kernel[i * kernel_size + j].begin() +
-                     conv1_im2col_kernel[i * kernel_size + j].size() -
-                     i * input_height * input_width,
-                 conv1_im2col_kernel[i * kernel_size + j].end());
-        }
+    Construct_toeplitz_matrix_blocks(channel_in, input_height, input_width, weight, 
+                              kernel_height, kernel_width, padding, channel_out, 
+                              num_input_blocks,  T_blocks, output_block_indices, 
+                              input_block_indices);
+
+    std::vector<std::vector<NODE_PTR>> T_block_nodes(T_blocks.size(), 
+    std::vector<NODE_PTR>(num_input_blocks));
+    
+    for (size_t i = 0; i < T_blocks.size(); ++i) {
+      for (size_t j = 0; j < T_blocks[i].size(); ++j) {
+        const auto& block = T_blocks[i][j];
+        int block_rows = output_block_indices[i].second - output_block_indices[i].first;
+        int block_cols = input_block_indices[j].second - input_block_indices[j].first;
+
+        // Create constant node
+        std::vector<int64_t> block_shape = { block_rows, block_cols };
+        std::string block_name = "T_block_" + std::to_string(i) + "_" + std::to_string(j);
+        CONSTANT_PTR block_const = New_array_const(
+          gscope, block_name.c_str(), block.size(),
+          weight_node->Rtype()->Cast_to_arr()->Elem_type(),
+          block_shape, (void*)block.data(), spos);
+        NODE_PTR block_node = cntr->New_ldc(block_const, spos);
+
+        ctx.Trace_cmd(TF_LOWER, Trace_float_array, block_node->Const(),
+                  "block_node");
+
+        T_block_nodes[i][j] = block_node;
       }
     }
-
-    FPVEC weight_im2col_vec;
-    for (int i = 0; i < channel_in * kernel_height * kernel_width; i++)
-      for (int j = 0; j < channel_out * input_height * input_width; j++)
-        weight_im2col_vec.push_back(conv1_im2col_kernel[i][j]);
-
-    // New weight_im2col_const
-    int64_t weight_im2col_size = channel_in * kernel_height * kernel_width *
-                                 channel_out * input_height * input_width;
-    std::vector<int64_t> weight_im2col_shape{
-        channel_in * kernel_height * kernel_width,
-        channel_out * input_height * input_width};
-    std::string weight_im2col_str =
-        New_array_name("weight_im2col_float", weight_im2col_shape);
-    CONSTANT_PTR weight_im2col_const = New_array_const(
-        gscope, weight_im2col_str.c_str(), weight_im2col_size,
-        weight_node->Rtype()->Cast_to_arr()->Elem_type(), weight_im2col_shape,
-        (void*)weight_im2col_vec.data(), spos);
-    NODE_PTR new_weight = cntr->New_ldc(weight_im2col_const, spos);
 
     // Expand bias const: TODO: add has broadcast, to sihe?
     NODE_PTR     bias_node = node->Child(2);
@@ -1016,11 +978,36 @@ public:
                         bias_expand_shape, (void*)bias_expand.data(), spos);
     NODE_PTR new_bias = cntr->New_ldc(bias_expand_const, spos);
 
-    NODE_PTR new_node = vgen.New_gemm_metakernel_toeplitz(
-          new_input1d, new_weight, new_bias, ra, channel_in, channel_out,
-          output_height, output_width, kernel_height * kernel_width, spos);
+    ctx.Trace_cmd(TF_LOWER, Trace_float_array, new_bias->Const(),
+                  "bias");
 
-    return new_node;
+    std::vector<NODE_PTR> output_nodes(T_blocks.size());
+    for (size_t i = 0; i < T_blocks.size(); ++i) {
+      NODE_PTR Y_block;
+      for (size_t j = 0; j < input_chunks.size(); ++j) {
+        NODE_PTR T_block_node = T_block_nodes[i][j];
+        NODE_PTR X_block = new_input1d_vec[j];
+
+        // Perform matrix multiplication
+        NODE_PTR matmul_node = cntr->New_tern_arith(
+          air::base::OPCODE(air::core::CORE, nn::core::OPCODE::GEMM),
+          X_block, T_block_node, new_bias, spos);
+
+        NODE_PTR block_output = Handle_gemm<RETV, VISITOR>(visitor, matmul_node);
+        
+        Y_block = vgen.New_add(Y_block, block_output, spos);
+      }
+
+      // Add bias to Y_block
+      // NODE_PTR Y_block_with_bias = vgen.New_add(Y_block, new_bias, spos);
+
+      output_nodes[i] = Y_block;
+    }
+
+    // Return the vector of output nodes
+    return cntr->New_bin_arith(
+          air::base::OPCODE(air::core::CORE, nn::core::OPCODE::CONCAT),
+          output_nodes[0], output_nodes[1], spos);
   }
 
   template <typename RETV, typename VISITOR>

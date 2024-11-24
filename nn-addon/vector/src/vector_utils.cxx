@@ -235,6 +235,130 @@ void Get_im2col_kernel(FPVEC& weight, int c_in, int h, int w, int c_out, int kh,
   }
 }
 
+void Construct_toeplitz_matrix_blocks(int c_i, int h_i, int w_i,
+                      FPVEC& kernel_weight, int k_h, int k_w, 
+                      int padding, int c_o, int num_input_blocks,
+                      std::vector<std::vector<std::vector<float>>>& T_blocks,
+                      std::vector<std::pair<int, int>>& output_block_indices,
+                      std::vector<std::pair<int, int>>& input_block_indices) {
+
+    // Calculate padded input dimensions
+    int h_i_padded = h_i + 2 * padding;
+    int w_i_padded = w_i + 2 * padding;
+
+    // Calculate output dimensions
+    int h_o = h_i_padded - k_h + 1;
+    int w_o = w_i_padded - k_w + 1;
+
+    int howoco = h_o * w_o * c_o;
+    int hiwici = h_i * w_i * c_i;
+
+    int num_output_blocks = num_input_blocks;
+
+    std::cout << "HERE4 \n";
+
+    // Compute input block indices
+    input_block_indices.clear();
+    int current_col = 0;
+    int cols_per_block = (hiwici + num_input_blocks - 1) / num_input_blocks;
+    for (int i = 0; i < num_input_blocks; ++i) {
+      int start_col = current_col;
+      int end_col = std::min(start_col + cols_per_block, hiwici);
+      input_block_indices.emplace_back(start_col, end_col);
+      current_col = end_col;
+    }
+
+    std::cout << "HERE5 \n";
+
+    // Compute output block indices
+    output_block_indices.clear();
+    int current_row = 0;
+    int rows_per_block = (howoco + num_output_blocks - 1) / num_output_blocks;
+    for (int i = 0; i < num_output_blocks; ++i) {
+      int start_row = current_row;
+      int end_row = std::min(start_row + rows_per_block, howoco);
+      output_block_indices.emplace_back(start_row, end_row);
+      current_row = end_row;
+    }
+
+    // Initialize blocks
+    T_blocks.resize(num_output_blocks, std::vector<std::vector<float>>(num_input_blocks));
+
+    for (int i = 0; i < num_output_blocks; ++i) {
+      int num_rows = output_block_indices[i].second - output_block_indices[i].first;
+      for (int j = 0; j < num_input_blocks; ++j) {
+        int num_cols = input_block_indices[j].second - input_block_indices[j].first;
+        T_blocks[i][j].resize(num_rows * num_cols, 0.0f);
+      }
+    }
+
+    // Map from global index to block index and index within block
+    std::vector<int> col_to_block(hiwici);
+    std::vector<int> col_in_block(hiwici);
+    for (int idx = 0; idx < hiwici; ++idx) {
+      for (size_t block_idx = 0; block_idx < input_block_indices.size(); ++block_idx) {
+        int start_col = input_block_indices[block_idx].first;
+        int end_col = input_block_indices[block_idx].second;
+        if (start_col <= idx && idx < end_col) {
+          col_to_block[idx] = static_cast<int>(block_idx);
+          col_in_block[idx] = idx - start_col;
+          break;
+        }
+      }
+    }
+
+    std::cout << "HERE8 \n";
+
+    std::vector<int> row_to_block(howoco);
+    std::vector<int> row_in_block(howoco);
+    for (int idx = 0; idx < howoco; ++idx) {
+      for (size_t block_idx = 0; block_idx < output_block_indices.size(); ++block_idx) {
+        int start_row = output_block_indices[block_idx].first;
+        int end_row = output_block_indices[block_idx].second;
+        if (start_row <= idx && idx < end_row) {
+          row_to_block[idx] = static_cast<int>(block_idx);
+          row_in_block[idx] = idx - start_row;
+          break;
+        }
+      }
+    }
+
+    // Fill Toeplitz matrix blocks
+    for (int o = 0; o < c_o; ++o) {  // Iterate over output channels
+      for (int i = 0; i < h_o; ++i) {
+        for (int j = 0; j < w_o; ++j) {
+          int row_index = (o * h_o * w_o) + (i * w_o + j);
+          int output_block_idx = row_to_block[row_index];
+          int row_in_blk = row_in_block[row_index];
+          // For each input channel
+          for (int c = 0; c < c_i; ++c) {
+            int kernel_index = ((o * c_i + c) * k_h * k_w);
+            for (int m = 0; m < k_h; ++m) {
+              for (int n = 0; n < k_w; ++n) {
+                int input_i = i + m - padding;
+                int input_j = j + n - padding;
+                if (input_i >= 0 && input_i < h_i && input_j >= 0 && input_j < w_i) {
+                  int col_index = (c * h_i * w_i) + (input_i * w_i + input_j);
+                  int input_block_idx = col_to_block[col_index];
+                  int col_in_blk = col_in_block[col_index];
+                  int block_rows = output_block_indices[output_block_idx].second - output_block_indices[output_block_idx].first;
+                  int block_cols = input_block_indices[input_block_idx].second - input_block_indices[input_block_idx].first;
+                  int block_row_offset = row_in_blk;
+                  int block_col_offset = col_in_blk;
+                  // Set value in T_blocks
+                  int weight_index = kernel_index + m * k_w + n;
+                  T_blocks[output_block_idx][input_block_idx][block_row_offset * block_cols + block_col_offset] =
+                      kernel_weight[weight_index];
+                }
+                // Else: Position is in padding; no action needed as blocks are initialized to zero
+              }
+            }
+          }
+        }
+      }
+    }
+}
+
 void Masking_padding_stride_data_in_vec(int h, int w, int channel, int padding,
                                         int stride, FPVEC& input) {
   AIR_ASSERT_MSG((stride > 1) && (padding != 0),
