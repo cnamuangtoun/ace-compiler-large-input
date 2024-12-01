@@ -77,13 +77,16 @@ void Prepare_input_large(TENSOR* input, const char* name) {
         }
       }
 
+      char chunk_name[64];
+      sprintf(chunk_name, "%s_channel_%zu_chunk_%zu", name, c, chunk_idx % (C+1));
+
       PLAINTEXT* plain = Alloc_plaintext();
       ENCODE(plain, (CKKS_ENCODER*)Context->_encoder, chunk_vec);
 
       CIPHER ciph = Alloc_ciphertext();
       Encrypt_msg(ciph, (CKKS_ENCRYPTOR*)Context->_encryptor, plain);
-
-      Io_set_input(name, chunk_idx++, ciph);
+      Io_set_input(chunk_name, 0, ciph);
+      chunk_idx++;
 
       Free_value_list(chunk_vec);
       Free_plaintext(plain);

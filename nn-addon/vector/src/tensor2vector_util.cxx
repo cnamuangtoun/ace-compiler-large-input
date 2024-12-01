@@ -1001,8 +1001,7 @@ NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(NODE_PTR op0,
   NODE_PTR ild_ra = _cntr->New_ild(ra_array, spos);
   // st input_roll[i]
   NODE_PTR pre_roll_node =
-      New_roll(_cntr->New_ld(input_dup_var, spos),
-               _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos), ra, spos);
+      New_roll(_cntr->New_ld(input_dup_var, spos), ild_ra, ra, spos);
   STMT_PTR pre_roll_st = _cntr->New_ist(input_array, pre_roll_node, spos);
   body_roll_sl.Append(pre_roll_st);
   _ctx.Prepend(loop_roll_stmt);

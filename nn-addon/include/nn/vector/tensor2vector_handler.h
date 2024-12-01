@@ -1043,13 +1043,63 @@ public:
       }
     }
 
-    // Expand bias const: TODO: add has broadcast, to sihe?
     NODE_PTR     bias_node = node->Child(2);
     const float* bias_ptr  = bias_node->Const()->Array_ptr<float>();
     FPVEC        bias_expand(channel_out * output_height * output_width);
-    for (int i = 0; i < channel_out; i++) {
-      for (int j = 0; j < output_height * output_width; j++) {
-        bias_expand[i * output_height * output_width + j] = bias_ptr[i];
+    int slot_capacity = 512;
+    size_t num_output_chunks = channel_out * *chunks_per_channel;
+
+    // Initialize vector to hold bias chunks
+    std::vector<FPVEC> bias_chunks(num_output_chunks);
+
+    // Precompute the number of elements in each chunk
+    std::vector<size_t> elements_in_chunk(*chunks_per_channel);
+    for (size_t i = 0; i < *chunks_per_channel; ++i) {
+      size_t h_start = i * (slot_capacity / input_width);
+      size_t rows_in_chunk = (h_start + slot_capacity / input_width > input_height)
+                                ? input_height - h_start
+                                : slot_capacity / input_width;
+      elements_in_chunk[i] = rows_in_chunk * input_width;
+    }
+
+    // Expand and chunk the bias
+    size_t chunk_idx = 0;
+    for (int k = 0; k < channel_out; ++k) { // For each output channel
+      for (size_t i = 0; i < *chunks_per_channel; ++i) { // For each chunk in height
+        size_t elem_count = elements_in_chunk[i];
+
+        // Create bias chunk filled with bias_ptr[k]
+        FPVEC bias_chunk(elem_count, bias_ptr[k]);
+
+        bias_chunks[chunk_idx++] = bias_chunk;
+      }
+    }
+
+    // Create constant nodes for bias chunks
+    std::vector<NODE_PTR> bias_chunk_nodes(num_output_chunks);
+    chunk_idx = 0;
+    for (int k = 0; k < channel_out; ++k) { // For each output channel
+      for (size_t i = 0; i < *chunks_per_channel; ++i) { // For each chunk in height
+        size_t elem_count = elements_in_chunk[i];
+
+        // Get the bias chunk
+        FPVEC& bias_chunk = bias_chunks[chunk_idx];
+
+        // Create constant node for bias chunk
+        std::vector<int64_t> bias_chunk_shape{elem_count};
+        std::string bias_chunk_name = "bias_chunk_" + std::to_string(chunk_idx);
+        CONSTANT_PTR bias_chunk_const = New_array_const(
+            gscope, bias_chunk_name.c_str(), elem_count,
+            bias_node->Rtype()->Cast_to_arr()->Elem_type(),
+            bias_chunk_shape, (void*)bias_chunk.data(), spos);
+        NODE_PTR bias_chunk_node = cntr->New_ldc(bias_chunk_const, spos);
+
+        ctx.Trace_cmd(TF_LOWER, Trace_float_array, bias_chunk_node->Const(), bias_chunk_name);
+
+        // Store the bias chunk node
+        bias_chunk_nodes[chunk_idx] = bias_chunk_node;
+
+        chunk_idx++;
       }
     }
 
@@ -1061,8 +1111,7 @@ public:
                         bias_expand_shape, (void*)bias_expand.data(), spos);
     NODE_PTR new_bias = cntr->New_ldc(bias_expand_const, spos);
 
-    ctx.Trace_cmd(TF_LOWER, Trace_float_array, new_bias->Const(),
-                  "bias");
+    ctx.Trace_cmd(TF_LOWER, Trace_float_array, new_bias->Const(), "bias");
     
     std::vector<NODE_PTR> output_nodes(T_blocks.size());
     for (size_t i = 0; i < T_blocks.size(); ++i) {
@@ -1087,13 +1136,15 @@ public:
         STMT_PTR vadd_store = cntr->New_st(vadd_node, Y_block, spos);
         ctx.Prepend(vadd_store);
       }
-      // Add bias to Y_block
-      NODE_PTR Y_block_with_bias = vgen.New_add(cntr->New_ld(Y_block, spos), new_bias, spos);
+      
+      NODE_PTR bias_chunk_node = bias_chunk_nodes[i];
+      NODE_PTR Y_block_with_bias = vgen.New_add(cntr->New_ld(Y_block, spos), bias_chunk_node, spos);
 
+      // Set chunking attributes
       Y_block_with_bias->Rtype()->Set_attr<int>("is_chunked", orig_input->Rtype()->Attr<int>("is_chunked"), 1);
       Y_block_with_bias->Rtype()->Set_attr<int>("chunks_per_channel", orig_input->Rtype()->Attr<int>("chunks_per_channel"), 1);
       Y_block_with_bias->Rtype()->Set_attr<int>("num_channels", orig_input->Rtype()->Attr<int>("num_channels"), 1);
-      
+
       output_nodes[i] = Y_block_with_bias;
     }
     // Return the output nodes

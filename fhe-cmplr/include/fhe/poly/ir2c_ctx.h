@@ -67,6 +67,7 @@ public:
     air::base::ENTRY_PTR entry        = func->Owning_func()->Entry_point();
     bool                 is_prg_entry = entry->Is_program_entry();
     if (Provider() != fhe::core::PROVIDER::ANT) {
+      int index = 0;
       // no need to call memset for SEAL/OpenFHE on ciphertext/plaintext
       if (is_prg_entry) {
         uint32_t num_args = entry->Type()->Cast_to_sig()->Num_param();
@@ -77,7 +78,7 @@ public:
           const char* name = parm->Name()->Char_str();
           _os << "  ";
           Emit_identifier(name);
-          _os << " = Get_input_data(\"" << name << "\", 0);" << std::endl;
+          _os << " = Get_input_data(\"" << name << "\", " << index++ << ");" << std::endl;
         }
       }
       return;
