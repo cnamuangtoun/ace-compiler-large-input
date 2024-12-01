@@ -94,6 +94,24 @@ GLOB_SCOPE* Vector_driver(GLOB_SCOPE* glob, VECTOR_CTX& ctx,
     AIR_ASSERT(retv != air::base::Null_ptr && retv->Is_entry());
     new_func->Set_entry_stmt(retv->Stmt());
   }
+  std::cout << "vector done \n";
+  // //Pass to eliminate concat nodes
+  // for (GLOB_SCOPE::FUNC_SCOPE_ITER it = new_glob->Begin_func_scope();
+  //       it != new_glob->End_func_scope(); ++it) {
+  //     FUNC_SCOPE* func = &(*it);
+  //     CONTAINER& cntr = func->Container();
+  //     TENSOR2VECTOR_CTX trav_ctx(&cntr, ctx, driver_ctx, cfg);
+
+  //     // Create visitor with the CONCAT_ELIMINATION_HANDLER
+  //     air::base::VISITOR<nn::vector::TENSOR2VECTOR_CTX,
+  //       air::core::HANDLER<nn::vector::CORE_HANDLER>,
+  //       nn::vector::CONCAT_ELIMINATION_HANDLER> > visitor(trav_ctx);
+
+  //     // Start traversal
+  //     NODE_PTR body = func->Container().Entry_node();
+  //     visitor.template Visit<void>(body);
+  // }
+
   return new_glob;
 }
 

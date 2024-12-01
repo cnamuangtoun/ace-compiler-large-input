@@ -53,8 +53,8 @@ def ace_compile_and_run_onnx(cwd, cmplr_path, onnx_path, onnx_model, log, debug)
     cmds = ['time', '-f', '\"%e %M\"', os.path.join(cmplr_path, 'bin', 'fhe_cmplr')]
     cmds.extend([model_file, '-P2C:fp:df=' + wfile + ':lib=ant'])
     cmds.extend(['-SIHE:relu_vr_def=21:relu_mul_depth=13', '-CKKS:sk_hw=192', '-o', onnx_c])
-    cmds.extend(['-O2A:ts', '-FHE_SCHEME:ts', '-VEC:ts:rtt:conv_fast:toeplitz:td=3:tib:tia', '-SIHE:ts:rtt'])
-    cmds.extend(['-CKKS:ts:q0=60:sf=56', '-POLY:ts:tia:rtt', '-P2C:ts'])
+    cmds.extend(['-O2A:ts', '-FHE_SCHEME:ts', '-VEC:ts:rtt:conv_fast:toeplitz:td=3:tia:tib', '-SIHE:ts:rtt'])
+    cmds.extend(['-CKKS:ts:q0=60:sf=56', '-POLY:ts:rtt', '-P2C:ts'])
     if debug:
         print(' '.join(cmds))
     if os.path.exists(wfile):

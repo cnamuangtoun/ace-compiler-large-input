@@ -57,7 +57,7 @@ void Prepare_input_large(TENSOR* input, const char* name) {
   size_t H = TENSOR_H(input); // Height of the image
   size_t W = TENSOR_W(input); // Width of the image
 
-  size_t slot_capacity = 32768;
+  size_t slot_capacity = 512;
   size_t chunk_idx = 0;
 
   for (size_t c = 0; c < C; ++c) { // Iterate over each channel

@@ -74,6 +74,7 @@ public:
   std::vector<ADDR_DATUM_PTR>& Input_vars() { return _input_sts; }
   std::vector<ADDR_DATUM_PTR>& Output_vars() { return _output_sts; }
   AIRGEN*                      Get_airgen() { return _airgen; }
+  std::unordered_map<std::string, std::vector<PREG_PTR>> _chunked_pregs;
 
 private:
   AIRSYMGEN(void);              // REQUIRED UNDEFINED UNWANTED methods

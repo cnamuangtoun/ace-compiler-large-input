@@ -189,6 +189,8 @@ public:
   void Set_const(CONSTANT_ID id);
   void Set_preg(CONST_PREG_PTR preg);
   void Set_preg(PREG_ID id);
+  // void Set_preg_list(std::vector<CONST_PREG_PTR> preg_list);
+  // void Set_preg_list(PREG_ID id);
   void Set_iv(CONST_ADDR_DATUM_PTR iv);
   void Set_iv(ADDR_DATUM_ID id);
   void Set_intconst(uint64_t val);

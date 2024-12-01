@@ -48,10 +48,51 @@ public:
 
   template <typename RETV, typename VISITOR>
   RETV Handle_relu(VISITOR* visitor, air::base::NODE_PTR node) {
+    TENSOR2VECTOR_CTX& ctx = visitor->Context();
+    CONTAINER*         cntr = ctx.Container();
+    SPOS               spos     = node->Spos();
+    TENSOR2VECTOR_UTIL vgen(ctx);
+
+
     NODE_PTR new_ld = visitor->template Visit<RETV>(node->Child(0));
-    NODE_PTR op     = visitor->Context().Container()->Clone_node(node);
-    op->Set_child(0, new_ld->Id());
-    return op;
+
+    std::cout << "start relu handle \n"; 
+
+    // // Get original conv2d input shape. Assuming NCHW&padding now.
+    new_ld->Print_tree(std::cout);
+    NODE_PTR orig_input = new_ld->Child(0);
+    std::vector<NODE_PTR> input_chunks;
+
+    // Retrieve the "is_chunked" attribute from orig_input
+    const int* num_channels;
+    const int* chunks_per_channel;
+    const int* is_chunked = orig_input->Rtype()->Attr<int>("is_chunked");
+    if (is_chunked && *is_chunked) {
+      // Retrieve "chunks_per_channel" from orig_input
+      chunks_per_channel = orig_input->Rtype()->Attr<int>("chunks_per_channel");
+      ctx.Trace(TF_LOWER, "Processing chunked input with ", *chunks_per_channel, " chunks per channel.\n");
+      num_channels = orig_input->Rtype()->Attr<int>("num_channels");
+      
+      input_chunks = CollectChunks<RETV>(new_ld, visitor);
+
+      ctx.Trace(TF_LOWER, "Collected ", input_chunks.size(), " input chunks.\n");
+      std::cout << "input is chunked \n";
+    } else {
+      ctx.Trace(TF_LOWER, "Input is not chunked.\n");
+      std::cout << "???? \n";
+    }
+
+    std::cout << "relu input size: " << input_chunks.size() << "\n";
+
+    std::vector<NODE_PTR> outputs;
+    for (auto input : input_chunks) {
+      NODE_PTR new_ld = visitor->template Visit<RETV>(input);
+      NODE_PTR op     = visitor->Context().Container()->Clone_node(node);
+      op->Set_child(0, new_ld->Id());
+      outputs.push_back(op);
+    }
+
+    return vgen.New_concat_output_node(cntr, outputs, spos, 0);
   }
 
   template <typename RETV, typename VISITOR>
@@ -832,7 +873,6 @@ public:
     if (ctx.Improve_ss_insert()) {
       ctx.Incr_num_op_ca_t2vsh();
     }
-    
     TIMING_UTIL        timing(ctx, node->Spos(), "Tensor::conv", false);
     CONTAINER*         cntr = ctx.Container();
     TENSOR2VECTOR_UTIL vgen(ctx);
@@ -841,18 +881,22 @@ public:
     SPOS               spos     = node->Spos();
     CONST_TYPE_PTR     s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
 
+    std::cout << "start conv toeplitz handle \n"; 
+    node->Print_tree(std::cout);
+
     // Get original conv2d input shape. Assuming NCHW&padding now.
     NODE_PTR orig_input = node->Child(0)->Child(0);
-
     std::vector<NODE_PTR> input_chunks;
 
     // Retrieve the "is_chunked" attribute from orig_input
+    const int* num_channels;
+    const int* chunks_per_channel;
     const int* is_chunked = orig_input->Rtype()->Attr<int>("is_chunked");
     if (is_chunked && *is_chunked) {
       // Retrieve "chunks_per_channel" from orig_input
-      const int* chunks_per_channel = orig_input->Rtype()->Attr<int>("chunks_per_channel");
+      chunks_per_channel = orig_input->Rtype()->Attr<int>("chunks_per_channel");
       ctx.Trace(TF_LOWER, "Processing chunked input with ", *chunks_per_channel, " chunks per channel.\n");
-      const int *num_channels = orig_input->Rtype()->Attr<int>("num_channels");
+      num_channels = orig_input->Rtype()->Attr<int>("num_channels");
       
       input_chunks = CollectChunks<RETV>(node->Child(0), visitor);
 
@@ -868,6 +912,9 @@ public:
     int64_t  batch = 0, channel_in = 0, input_height = 0, input_width = 0;
     Get_array_nchw(orig_input->Rtype(), batch, channel_in, input_height,
                    input_width);
+
+    channel_in *= *num_channels;
+    input_height *= *chunks_per_channel;
 
     int64_t output_height = input_height;
     int64_t output_width  = input_width;
@@ -921,14 +968,11 @@ public:
 
     int stride = 1;
     int64_t kernel_size = kernel_height * kernel_width;
-    std::cout << "HERE1 \n";
 
     // std::vector<int> ra(kernel_height * kernel_width, 0);
     std::vector<std::vector<FPVEC>> T_blocks;
     std::vector<std::pair<int, int>> output_block_indices;
     std::vector<std::pair<int, int>> input_block_indices;
-
-    std::cout << "HERE2 \n";
 
     Construct_toeplitz_matrix_blocks(channel_in, input_height, input_width, weight, 
                               kernel_height, kernel_width, padding, channel_out, 
@@ -937,6 +981,9 @@ public:
 
     std::vector<std::vector<NODE_PTR>> T_block_nodes(T_blocks.size(), 
     std::vector<NODE_PTR>(num_input_blocks));
+
+    std::vector<std::vector<std::vector<int>>> T_block_ra(T_blocks.size(), 
+    std::vector<std::vector<int>>(num_input_blocks));
     
     for (size_t i = 0; i < T_blocks.size(); ++i) {
       for (size_t j = 0; j < T_blocks[i].size(); ++j) {
@@ -944,17 +991,53 @@ public:
         int block_rows = output_block_indices[i].second - output_block_indices[i].first;
         int block_cols = input_block_indices[j].second - input_block_indices[j].first;
 
+        // Convert T_block_flat to 2D matrix
+        FPMAT T_block_matrix(block_rows, FPVEC(block_cols));
+        for (int r = 0; r < block_rows; ++r) {
+          for (int c = 0; c < block_cols; ++c) {
+            T_block_matrix[r][c] = block[r * block_cols + c];
+          }
+        }
+
+        FPVEC diag_vec;
+        std::vector<int> ra;
+        int new_height;
+
+        for (int i = 0; i < block_cols; i++) {
+          FPVEC diag = Transpose_diagonal(T_block_matrix, i, block_cols);
+          // Check if diag is non-zero
+          bool is_non_zero = false;
+          for (const auto& val : diag) {
+              if (val != 0.0f) {
+                  is_non_zero = true;
+                  break;
+              }
+          }
+          if (is_non_zero) {
+            diag_vec = diag_vec + diag;
+            // Store the roll amount
+            ra.push_back(i);
+          }
+        }
+
+        T_block_ra[i][j] = ra;
+
+        new_height = ra.size();
+
+        ctx.Trace(TF_LOWER, "ra.size()", ra.size(), "\n");
+        ctx.Trace(TF_LOWER, "padw: ", block_cols, "\n");
+
         // Create constant node
-        std::vector<int64_t> block_shape = { block_rows, block_cols };
-        std::string block_name = "T_block_" + std::to_string(i) + "_" + std::to_string(j);
+        std::vector<int64_t> block_shape = { new_height, block_cols };
+        std::string block_name = "T_block_diag_" + std::to_string(i) + "_" + std::to_string(j);
         CONSTANT_PTR block_const = New_array_const(
-          gscope, block_name.c_str(), block.size(),
+          gscope, block_name.c_str(), new_height * block_cols,
           weight_node->Rtype()->Cast_to_arr()->Elem_type(),
-          block_shape, (void*)block.data(), spos);
+          block_shape, (void*)diag_vec.data(), spos);
         NODE_PTR block_node = cntr->New_ldc(block_const, spos);
 
         ctx.Trace_cmd(TF_LOWER, Trace_float_array, block_node->Const(),
-                  "block_node");
+                  "T_block_diag_" + std::to_string(i) + "_" + std::to_string(j));
 
         T_block_nodes[i][j] = block_node;
       }
@@ -980,34 +1063,41 @@ public:
 
     ctx.Trace_cmd(TF_LOWER, Trace_float_array, new_bias->Const(),
                   "bias");
-
+    
     std::vector<NODE_PTR> output_nodes(T_blocks.size());
     for (size_t i = 0; i < T_blocks.size(); ++i) {
-      NODE_PTR Y_block;
+      TYPE_PTR res_type =
+          New_array_type(gscope, "type_output_block_n", ctx.Get_num_vloop(),
+                        s32_type, input_chunks[0]->Rtype()->Cast_to_arr()->Shape(), spos);
+
+      ADDR_DATUM_PTR Y_block =
+          vgen.Gen_store_zero_to_var_stmt("output_block_n", res_type, spos);
       for (size_t j = 0; j < input_chunks.size(); ++j) {
         NODE_PTR T_block_node = T_block_nodes[i][j];
+        std::vector<int>& ra = T_block_ra[i][j];
         NODE_PTR X_block = new_input1d_vec[j];
 
-        // Perform matrix multiplication
-        NODE_PTR matmul_node = cntr->New_tern_arith(
-          air::base::OPCODE(air::core::CORE, nn::core::OPCODE::GEMM),
-          X_block, T_block_node, new_bias, spos);
+        std::vector<int64_t>actual_shape = input_chunks[j]->Rtype()->Cast_to_arr()->Shape();
 
-        NODE_PTR block_output = Handle_gemm<RETV, VISITOR>(visitor, matmul_node);
-        
-        Y_block = vgen.New_add(Y_block, block_output, spos);
+        NODE_PTR block_output = vgen.New_gemm_metakernel_toeplitz(X_block, 
+          T_block_node, actual_shape[1], actual_shape[3], actual_shape[2], 
+          ra, spos);
+        NODE_PTR vadd_node = vgen.New_add(cntr->New_ld(Y_block, spos), 
+          block_output, spos);
+        STMT_PTR vadd_store = cntr->New_st(vadd_node, Y_block, spos);
+        ctx.Prepend(vadd_store);
       }
-
       // Add bias to Y_block
-      // NODE_PTR Y_block_with_bias = vgen.New_add(Y_block, new_bias, spos);
+      NODE_PTR Y_block_with_bias = vgen.New_add(cntr->New_ld(Y_block, spos), new_bias, spos);
 
-      output_nodes[i] = Y_block;
+      Y_block_with_bias->Rtype()->Set_attr<int>("is_chunked", orig_input->Rtype()->Attr<int>("is_chunked"), 1);
+      Y_block_with_bias->Rtype()->Set_attr<int>("chunks_per_channel", orig_input->Rtype()->Attr<int>("chunks_per_channel"), 1);
+      Y_block_with_bias->Rtype()->Set_attr<int>("num_channels", orig_input->Rtype()->Attr<int>("num_channels"), 1);
+      
+      output_nodes[i] = Y_block_with_bias;
     }
-
-    // Return the vector of output nodes
-    return cntr->New_bin_arith(
-          air::base::OPCODE(air::core::CORE, nn::core::OPCODE::CONCAT),
-          output_nodes[0], output_nodes[1], spos);
+    // Return the output nodes
+    return vgen.New_concat_output_node(cntr, output_nodes, spos, 0);
   }
 
   template <typename RETV, typename VISITOR>
@@ -1017,7 +1107,7 @@ public:
     // Recursive helper function
     std::function<void(NODE_PTR)> traverse = [&](NODE_PTR current) {
 
-      if (current->Opcode() == air::base::OPCODE(air::core::CORE, air::core::OPCODE::LD)) {
+      if (current->Opcode() != air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT)) {
         chunks.push_back(visitor->template Visit<RETV>(current));
         return;
       }

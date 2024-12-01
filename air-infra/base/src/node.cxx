@@ -545,6 +545,18 @@ void NODE::Set_preg(PREG_ID id) {
   _data->_uu._preg = id.Value();
 }
 
+// void NODE::Set_preg_list(std::vector<CONST_PREG_PTR> preg_list) { 
+//   for (auto preg : preg_list){
+//     Set_preg_list(preg->Id()); 
+//   }
+// }
+
+// void NODE::Set_preg_list(PREG_ID id) {
+//   AIR_ASSERT(Has_preg());
+//   _data->_preg_list.push_back(id.Value());
+// }
+  
+
 void NODE::Set_iv(CONST_ADDR_DATUM_PTR iv) { Set_iv(iv->Id()); }
 
 void NODE::Set_iv(ADDR_DATUM_ID id) {

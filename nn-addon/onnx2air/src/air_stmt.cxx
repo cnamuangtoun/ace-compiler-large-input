@@ -49,6 +49,13 @@ bool AIRSTMTGEN::Convert_stmts(FUNC_SCOPE*       func_scope,
     return false;
   }
 
+  // SPOS           spos       = Get_airgen()->Get_glob()->Unknown_simple_spos();
+  // for (auto out : outs) {
+  //   NODE_PTR       ldid       = cntr->New_ld(out, spos);
+  //   STMT_PTR       ret_stmt   = cntr->New_retv(ldid, spos);
+  //   sl.Append(ret_stmt);
+  // }
+
   ADDR_DATUM_PTR out_st_ptr = outs[0];
   SPOS           spos       = Get_airgen()->Get_glob()->Unknown_simple_spos();
   NODE_PTR       ldid       = cntr->New_ld(out_st_ptr, spos);
@@ -63,18 +70,30 @@ bool AIRSTMTGEN::Get_node_input_tensors(onnx::NodeProto* node, std::vector<NODE_
   SPOS        spos       = Get_airgen()->Get_glob()->Unknown_simple_spos();
 
   for (const auto& tensor_name : node->input()) {
+    std::cout << "input_name: " << tensor_name << "\n";
     NAME_MAP st_ptr = Get_airgen()->Sg().Get_result(tensor_name);
     if (st_ptr.Is_cst()) {
+      std::cout << "is cst \n";
       inputs.push_back(cntr->New_ldc(st_ptr.Cst(), spos));
     } else if (st_ptr.Is_sym()) {
+      std::cout << "is sym \n";
       inputs.push_back(cntr->New_ld(st_ptr.Sym(), spos));
     } else if (st_ptr.Is_preg()) {
+      std::cout << "is preg \n";
       inputs.push_back(cntr->New_ldp(st_ptr.Preg(), spos));
     } else if (st_ptr.Is_sym_list()) {
+      std::cout << "is sym list \n";
       // Handle chunked parameters
       const auto& sym_list = st_ptr.Sym_list();
       for (const auto& sym : sym_list) {
         inputs.push_back(cntr->New_ld(sym, spos));
+      }
+    } else if (st_ptr.Is_preg_list()) {
+      std::cout << "is preg list \n";
+      // Handle chunked parameters
+      const auto& preg_list = st_ptr.Preg_list();
+      for (const auto& preg : preg_list) {
+        inputs.push_back(cntr->New_ldp(preg, spos));
       }
     } else {
       return false;
@@ -214,6 +233,8 @@ bool AIRSTMTGEN::Try_resolve_node(onnx::NodeProto* node,
 
   if (Get_node_input_tensors(node, inputs) == false) return false;
 
+  std::cout << "=" << inputs.size() << "\n";
+
   SPOS        spos     = Get_airgen()->Get_glob()->Unknown_simple_spos();
   std::string new_node = node->op_type();
 
@@ -248,6 +269,71 @@ bool AIRSTMTGEN::Try_resolve_node(onnx::NodeProto* node,
     else
       onnx_name = "";
   }
+
+  std::cout << "output_name: " << onnx_name << "\n";
+
+  // Create parameters for each chunk
+
+  // std::vector<PREG_PTR> chunked_pregs;
+  // std::string chunk_name;
+  // STMT_PTR stmt;
+  // for (auto chunk_name : chunk_names) {
+  //   std::cout << "chunk_name: " << chunk_name << "\n";
+  //   NAME_MAP out_st_ptr = Get_airgen()->Sg().Get_tensor_sym_or_preg(
+  //     chunk_name, base_ty, result_dim, func_scope);
+  //   if (out_st_ptr.Is_preg()) {
+  //     std::cout << "adding preg \n";
+  //     chunked_pregs.push_back(out_st_ptr.Preg());
+  //   } else {
+  //     stmt = cntr->New_st(node_op, out_st_ptr.Sym(), spos);
+  //     cntr->Stmt_list().Append(stmt);
+  //   }
+  // }
+
+  // NAME_MAP out_st_ptr = Get_airgen()->Sg().Get_tensor_sym_or_preg(
+  //   onnx_name, base_ty, result_dim, func_scope);
+  // AIR_ASSERT_MSG(out_st_ptr.Is_preg() || out_st_ptr.Is_sym() || out_st_ptr.Is_sym_list(),
+  //               ("Expect output to be preg, symbol, or symbal list.\n"));
+  
+  // if (node_op->Opcode() == air::core::OPC_LDC && onnx_name != "" &&
+  //   out_st_ptr.Is_preg()) {
+  //   Get_airgen()->Sg().Put_operator_cst(onnx_name, node_op->Const());
+  // } else {
+  //   STMT_PTR stmt;
+  //   if (out_st_ptr.Is_sym_list()) {
+  //     for (auto sym : out_st_ptr.Sym_list()) {
+  //       stmt = cntr->New_st(node_op, sym, spos);
+  //       cntr->Stmt_list().Append(stmt);
+  //     }
+  //   } else if (out_st_ptr.Is_sym()) {
+  //     stmt = cntr->New_st(node_op, out_st_ptr.Sym(), spos);
+  //     cntr->Stmt_list().Append(stmt);
+  //   } else {
+  //     const int* is_chunked = inputs[0]->Rtype()->Attr<int>("is_chunked");
+  //     if (is_chunked && *is_chunked) {
+  //       const int* num_channels = inputs[0]->Rtype()->Attr<int>("num_channels");
+  //       const int* chunks_per_channel = inputs[0]->Rtype()->Attr<int>("chunks_per_channel");
+
+  //       std::cout << "num_channels: " << *num_channels << ", chunk_per_channel: " << *chunks_per_channel << "\n";
+  //       std::vector<PREG_PTR> chunk_names;
+  //       for (int c = 0; c < *num_channels; ++c) {
+  //         for (int i = 0; i < *chunks_per_channel; ++i) {
+  //           std::string chunk_name = onnx_name + "_channel_" + std::to_string(c) + "_chunk_" + std::to_string(i);
+  //           std::cout << "adding preg_list \n";
+  //           NAME_MAP out_st_ptr = Get_airgen()->Sg().Get_tensor_sym_or_preg(
+  //             chunk_name, base_ty, result_dim, func_scope);
+            
+  //           chunk_names.push_back(out_st_ptr.Preg());
+  //         }
+  //       }
+  //       Get_airgen()->Sg()._chunked_pregs[onnx_name] = chunk_names;
+  //     }
+  //     std::cout << "adding preg \n";
+  //     stmt = cntr->New_stp(node_op, out_st_ptr.Preg(), spos);
+  //     cntr->Stmt_list().Append(stmt);
+  //   }
+  // }
+
   NAME_MAP out_st_ptr = Get_airgen()->Sg().Get_tensor_sym_or_preg(
       onnx_name, base_ty, result_dim, func_scope);
   AIR_ASSERT_MSG(out_st_ptr.Is_preg() || out_st_ptr.Is_sym(),
@@ -263,6 +349,12 @@ bool AIRSTMTGEN::Try_resolve_node(onnx::NodeProto* node,
       stmt = cntr->New_st(node_op, out_st_ptr.Sym(), spos);
     cntr->Stmt_list().Append(stmt);
   }
+
+  // std::cout << "here1 \n";
+  // if (chunked_pregs.size() > 1) {
+  //   Get_airgen()->Sg()._chunked_pregs[onnx_name] = chunked_pregs;
+  //   std::cout << "Stored " << onnx_name << " in preg_list \n";
+  // }
 
   Update_attributes(node, node_op);
   _nodes.insert(node->op_type());
@@ -488,18 +580,16 @@ void AIRSTMTGEN::Update_attributes_for_flatten(NODE_PTR node) {
 void AIRSTMTGEN::Create_node_for_conv(CONTAINER* cntr,
                                       std::vector<NODE_PTR>& input,
                                       const SPOS& spos, NODE_PTR& op_node) {
-  // Combine input[0] and input[1] into a single node
-  NODE_PTR combined_input_node = cntr->New_bin_arith(
-      air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT), input[0], input[1], spos);
+
+  NODE_PTR concatenated_tree;
+  int ignore_n = 2;
+
+  ConcatInputsToTree(cntr, input, spos, 2, concatenated_tree);
 
   // Create the convolution node using the combined input
   op_node = cntr->New_tern_arith(
       air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV),
-      combined_input_node, input[2], input[3], spos);
-
-  // op_node = cntr->New_tern_arith(
-  //     air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONV), input[0],
-  //     input[1], input[2], spos);
+      concatenated_tree, input[input.size() - ignore_n], input[input.size() - ignore_n + 1], spos);
 }
 
 void AIRSTMTGEN::Parse_attributes_for_conv(onnx::NodeProto* node) {
@@ -517,6 +607,35 @@ void AIRSTMTGEN::Parse_attributes_for_conv(onnx::NodeProto* node) {
     else
       AIR_ASSERT_MSG(false, ("Unknown attribute.\n"));
   }
+}
+
+void AIRSTMTGEN::ConcatInputsToTree(CONTAINER* cntr, 
+                        std::vector<NODE_PTR>& input, 
+                        const SPOS& spos, int ignore_n, 
+                        NODE_PTR& concatenated_tree) {
+
+  size_t num_inputs = input.size();
+  if (num_inputs <= 2) {
+    throw std::invalid_argument("Insufficient input nodes for concatenation");
+  }
+
+  // Helper function to recursively build the tree of concatenated nodes
+  std::function<NODE_PTR(size_t, size_t)> build_concat_tree = [&](size_t start, size_t end) -> NODE_PTR {
+    if (start == end) {
+      return input[start];
+    }
+
+    size_t mid = start + (end - start) / 2;
+    NODE_PTR left = build_concat_tree(start, mid);
+    NODE_PTR right = build_concat_tree(mid + 1, end);
+
+    // Create a concatenation node for the left and right subtrees
+    return cntr->New_bin_arith(
+        air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT), left, right, spos);
+  };
+
+  // Build the tree for the inputs except the last n
+  concatenated_tree = build_concat_tree(0, num_inputs - ignore_n - 1);
 }
 
 // TODO. Need to figure out why -2 is necessary.
@@ -662,7 +781,10 @@ void AIRSTMTGEN::Resolve_for_conv(onnx::NodeProto*       node,
                                   TYPE_PTR&              base_ty,
                                   std::vector<int>&      result_dim) {
   NODE_PTR x = inputs[0];
-  NODE_PTR w = inputs[1];
+  NODE_PTR w = inputs[inputs.size()-2];
+
+  x->Print_tree(std::cout);
+  w->Print_tree(std::cout);
 
   AIR_ASSERT_MSG(x->Rtype()->Is_array(), "Expect tensor type");
   std::vector<int> strides   = Resolve_strides(x->Rtype()->Cast_to_arr());

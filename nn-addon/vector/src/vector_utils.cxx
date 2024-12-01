@@ -55,9 +55,10 @@ CONSTANT_PTR New_array_const(GLOB_SCOPE* gscope, const std::string& name,
   TYPE_PTR const_type = New_array_type(gscope, name, elem_type, shape, spos);
 
   // TODO: type Byte_sz()
-  int          bsz = elem_type->Cast_to_prim()->Byte_size();
+  int    bsz = elem_type->Cast_to_prim()->Byte_size();
+  size_t byte = static_cast<size_t>(bsz) * static_cast<size_t>(asize);
   CONSTANT_PTR result_const =
-      gscope->New_const(CONSTANT_KIND::ARRAY, const_type, buf, bsz * asize);
+      gscope->New_const(CONSTANT_KIND::ARRAY, const_type, buf, byte);
   return result_const;
 }
 
@@ -255,8 +256,6 @@ void Construct_toeplitz_matrix_blocks(int c_i, int h_i, int w_i,
 
     int num_output_blocks = num_input_blocks;
 
-    std::cout << "HERE4 \n";
-
     // Compute input block indices
     input_block_indices.clear();
     int current_col = 0;
@@ -267,8 +266,6 @@ void Construct_toeplitz_matrix_blocks(int c_i, int h_i, int w_i,
       input_block_indices.emplace_back(start_col, end_col);
       current_col = end_col;
     }
-
-    std::cout << "HERE5 \n";
 
     // Compute output block indices
     output_block_indices.clear();
@@ -306,8 +303,6 @@ void Construct_toeplitz_matrix_blocks(int c_i, int h_i, int w_i,
         }
       }
     }
-
-    std::cout << "HERE8 \n";
 
     std::vector<int> row_to_block(howoco);
     std::vector<int> row_in_block(howoco);

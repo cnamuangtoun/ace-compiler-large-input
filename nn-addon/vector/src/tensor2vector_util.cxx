@@ -130,27 +130,24 @@ STMT_PTR TENSOR2VECTOR_UTIL::New_loop(const char* index_str, int init,
   FUNC_SCOPE*    fscope   = _cntr->Parent_func_scope();
   CONST_TYPE_PTR s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
 
+
   // Generate a NULL loop
   std::string new_index_str(index_str);
   new_index_str += (std::string("_n") + std::to_string(_ctx.Get_num_vloop()));
   STR_PTR        index_name = gscope->New_str(new_index_str.c_str());
   ADDR_DATUM_PTR index_var  = fscope->New_var(s32_type, index_name, spos);
   NODE_PTR       index_node = _cntr->New_ld(index_var, spos);
-
   NODE_PTR init_node;
   init_node = _cntr->New_intconst(s32_type, init, spos);
-
   NODE_PTR upper_node = _cntr->New_intconst(s32_type, upper, spos);
   NODE_PTR cond_node =
       _cntr->New_bin_arith(air::core::OPCODE::LT, index_node, upper_node, spos);
   NODE_PTR incr_node =
       _cntr->New_bin_arith(air::core::OPCODE::ADD, index_node,
                            _cntr->New_intconst(s32_type, 1, spos), spos);
-
   NODE_PTR loop_body = _cntr->New_stmt_block(spos);
   STMT_PTR loop_stmt = _cntr->New_do_loop(index_var, init_node, cond_node,
                                           incr_node, loop_body, spos);
-
   AIR_ASSERT_MSG(loop_stmt->Node()->Child(3)->Is_block(),
                  "Loop body is not a block node!");
   return loop_stmt;
@@ -909,400 +906,328 @@ NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel(NODE_PTR op0, NODE_PTR op1,
   return ld_result;
 }
 
-// NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(NODE_PTR op0, 
-//                                                  NODE_PTR op1, NODE_PTR op2,
-//                                                  int output_height, 
-//                                                  int output_width, int n1, int n2,
-//                                                  const std::vector<int>& ra,
-//                                                  const SPOS& spos) {
-//   _ctx.Incr_num_vloop();
-//   GLOB_SCOPE* gscope = _cntr->Glob_scope();
-//   FUNC_SCOPE* fscope = _cntr->Parent_func_scope();
-
-//   // Get and check op0 type
-//   AIR_ASSERT_MSG(op0->Rtype()->Is_array(), "op0 is not an array type");
-//   ARRAY_TYPE_PTR op0_ty_arr = op0->Rtype()->Cast_to_arr();
-
-//   std::vector<int64_t> op0_shape = op0_ty_arr->Shape();
-//   AIR_ASSERT_MSG(((op0_shape.size() == 2) && (op0_shape[0] == 1)) ||
-//                      (op0_shape.size() == 1),
-//                  "op0: shape=%d dim[0]=%d. 2D is work in progress",
-//                  op0_shape.size(), op0_shape[0]);
-
-//   CONST_TYPE_PTR s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
-
-//   // Get and check op1 type
-//   AIR_ASSERT_MSG(op1->Rtype()->Is_array(), "op1 is not an array type");
-//   ARRAY_TYPE_PTR op1_ty_arr = op1->Rtype()->Cast_to_arr();
-
-//   std::vector<int64_t> op1_shape = op1_ty_arr->Shape();
-
-//   int64_t input_shape_size = op1_ty_arr->Shape().size();
-//   int64_t input_size = op1_shape[0] * op1_shape[1];
-//   int64_t num_rolls = ra.size();
-//   int64_t height = op1_shape[0];
-//   int64_t padw = op1_shape[1];
-//   int64_t c_o = input_size / padw;
-
-//   _ctx.Trace_cmd(TF_LOWER, Trace_float_array, op1->Const(), "gemm op1_diag");
-
-//   //for dup input
-//   std::vector<int64_t> shape(1, padw);
-
-//   // Build var: result
-//   std::vector<int64_t> result_shape{1, c_o, output_height, output_width};
-
-//   TYPE_PTR result_vtype =
-//       New_array_type(gscope, "type_result_n", _ctx.Get_num_vloop(),
-//                      op0_ty_arr->Elem_type(), result_shape, spos);
-
-//   TYPE_PTR vtype =
-//       New_array_type(gscope, "type_input", _ctx.Get_num_vloop(),
-//                      op0_ty_arr->Elem_type(), shape, spos);
-
-//   std::vector<int64_t> ra_shape(1, ra.size());
-
-//   TYPE_PTR     ra_type  = New_array_type(gscope, "ra_int", _ctx.Get_num_vloop(),
-//                                          s32_type, ra_shape, spos);
-//   CONSTANT_PTR ra_const = gscope->New_const(CONSTANT_KIND::ARRAY, ra_type,
-//                                             (void*)(ra.data()), 4 * ra.size());
-//   _ctx.Trace_cmd(TF_LOWER, Trace_int_array, ra_const, "conv ra_const");
-  
-//   // VECTOR result_var = 0
-//   ADDR_DATUM_PTR result_var =
-//       Gen_store_zero_to_var_stmt("result_n", result_vtype, spos);
-
-//   std::string result_n1_str =
-//       (std::string("result_n1_n") + std::to_string(_ctx.Get_num_vloop()));
-//   ADDR_DATUM_PTR result_n1_var =
-//       fscope->New_var(result_vtype, result_n1_str.c_str(), spos);
-
-//   std::string dup_str =
-//     (std::string("input_dup_n") + std::to_string(_ctx.Get_num_vloop()));
-//   ADDR_DATUM_PTR input_dup_var = fscope->New_var(vtype, dup_str.c_str(), spos);
-
-//   // input_dup = input + roll(input, -width).
-//   NODE_PTR input_dup   = op0;
-//   NODE_PTR add_dup_node = op0;
-
-//   STMT_PTR input_dup_stmt = _cntr->New_st(add_dup_node, input_dup_var, spos);
-//   _ctx.Prepend(input_dup_stmt);
-
-//   // Loop to compute input_roll[i] = ROLL(op0, i)
-//   STMT_PTR loop_roll_stmt = New_loop("index_roll", 0, n1, spos);  // Use n1 as loop bound
-//   STMT_LIST body_roll_sl = 
-//       STMT_LIST::Enclosing_list(loop_roll_stmt->Node()->Child(3)->End_stmt());
-
-//   // Build input_roll[i] with array of array: [[vector0],[vector1]...]
-//   std::vector<int64_t> n1_ra_shape(1, n1);  // Define shape of input_roll using n1
-
-//   TYPE_PTR input_vvtype =
-//     New_array_type(gscope, "type_input_roll_vv_n", _ctx.Get_num_vloop(),
-//                 vtype, n1_ra_shape, spos);  // Use n1_ra_shape
-//   std::string input_roll_str =
-//     (std::string("input_roll_n") + std::to_string(_ctx.Get_num_vloop()));
-//   ADDR_DATUM_PTR input_roll_var =
-//     fscope->New_var(input_vvtype, input_roll_str.c_str(), spos);
-
-//   NODE_PTR input_array = _cntr->New_array(
-//     _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
-//   _cntr->Set_array_idx(input_array, 0,
-//                 _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
-
-//   // input_roll[i] = ROLL(input_dup, i)
-//   std::vector<int> n1_ra;
-//   for (int i = 0; i < n1; i++) n1_ra.push_back(i);
-
-//   NODE_PTR pre_roll_node =
-//       New_roll(_cntr->New_ld(input_dup_var, spos),
-//                _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos), n1_ra, spos);
-//   STMT_PTR pre_roll_st = _cntr->New_ist(input_array, pre_roll_node, spos);
-//   body_roll_sl.Append(pre_roll_st);
-//   _ctx.Prepend(loop_roll_stmt);
-
-// //   // Loop over n2 
-// //   STMT_PTR loop_n2_stmt = New_loop("index_n2", 0, n2 * n1, spos);
-// //   STMT_LIST body_n2_sl = 
-// //       STMT_LIST::Enclosing_list(loop_n2_stmt->Node()->Child(3)->End_stmt());
-
-//   // Loop over n1 rolled inputs
-//   STMT_PTR loop_n1_stmt = New_loop("index_n1", 0, n1, spos);
-//   STMT_LIST body_n1_sl = 
-//       STMT_LIST::Enclosing_list(loop_n1_stmt->Node()->Child(3)->End_stmt());
-
-//   // VECTOR result_n1 = 0
-//   STMT_PTR st0_result_n1_stmt =
-//       _cntr->New_st(_cntr->New_zero(result_vtype, spos), result_n1_var, spos);
-//   body_n2_sl.Append(st0_result_n1_stmt);
-
-//   std::vector<int> mod_r_values;
-//   for (size_t i = 0; i < ra.size(); ++i) {
-//     mod_r_values.push_back(ra[i] % n1);
-//   }
-
-//   std::vector<int64_t> mod_r_shape(1, mod_r_values.size());  // Shape for the constant array
-//   CONSTANT_PTR mod_r_const = gscope->New_const(
-//     CONSTANT_KIND::ARRAY, New_array_type(gscope, "mod_r_int", _ctx.Get_num_vloop(),
-//     s32_type, mod_r_shape, spos), 
-//     (void*)(mod_r_values.data()), mod_r_values.size() * sizeof(int)
-//   );
-  
-//   NODE_PTR mod_r_array = _cntr->New_array(
-//     _cntr->New_ldca(mod_r_const, POINTER_KIND::FLAT32, spos), 1, spos);
-
-//   _ctx.Trace_cmd(TF_LOWER, Trace_int_array, mod_r_const, "mod_r");
-  
-//   // weight_diag[i1*n1+i2]
-//   NODE_PTR slice_index_node = _cntr->New_ld(loop_n1_stmt->Node()->Iv(), spos);
-
-//   NODE_PTR weight_slice = 
-//       New_slice(op1, slice_index_node,
-//                  _cntr->New_intconst(s32_type, padw, spos), spos);
-
-//   _cntr->Set_array_idx(mod_r_array, 0, _cntr->New_ld(loop_n1_stmt->Node()->Iv(), spos));
-  
-//   // Get rolled_input = input_roll[index_diag]
-//   NODE_PTR input_roll_array_diag = _cntr->New_array(
-//       _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
-//   _cntr->Set_array_idx(input_roll_array_diag, 0, 
-//                       _cntr->New_ild(mod_r_array, spos));
-//   NODE_PTR ild_input_diag = _cntr->New_ild(input_roll_array_diag, spos);
-
-//   // Perform element-wise multiplication
-//   NODE_PTR vmul_node = New_mul(ild_input_diag, weight_slice, spos);
-
-//   // Accumulate the result
-//   NODE_PTR vadd_node = 
-//       New_add(_cntr->New_ld(result_n1_var, spos), vmul_node, spos);
-//   STMT_PTR vadd_store = _cntr->New_st(vadd_node, result_n1_var, spos);
-
-//   body_n1_sl.Append(vadd_store);
-
-//   std::vector<int> roll_num_left;
-//   for (int i = 0; i < n1_ra.size(); i++)
-//     roll_num_left.push_back(-ra[i]);
-
-//   NODE_PTR n1_roll_node = New_roll(
-//       _cntr->New_ld(result_n1_var, spos),
-//       _cntr->New_bin_arith(
-//           air::core::OPCODE::MUL, 
-//           _cntr->New_ld(loop_n2_stmt->Node()->Iv(), spos),
-//           _cntr->New_intconst(s32_type, n1, spos),
-//           spos),
-//       roll_num_left, spos);
-      
-//   NODE_PTR vadd_node2 =
-//       New_add(_cntr->New_ld(result_var, spos), n1_roll_node, spos);
-//   STMT_PTR vadd_store2 = _cntr->New_st(vadd_node2, result_var, spos);
-
-//   body_n2_sl.Append(loop_n1_stmt);
-//   body_n2_sl.Append(vadd_store2);
-//   _ctx.Prepend(loop_n2_stmt);
-  
-//     // Add bias
-//   NODE_PTR vaddc_node = New_add(_cntr->New_ld(result_var, spos), op2, spos);
-//   STMT_PTR vaddc_stmt = _cntr->New_st(vaddc_node, result_var, spos);
-//   _ctx.Prepend(vaddc_stmt);
-
-//   Gen_clear_data_stmt(result_var, padw, op0_ty_arr->Elem_type(), spos);
-
-
-//   // Load result
-//   NODE_PTR ld_result = _cntr->New_ld(result_var, spos);
-
-//   return ld_result;
-// }
-
-NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(
-    std::vector<NODE_PTR> inputs, NODE_PTR weight, NODE_PTR bias, std::vector<int> ra,
-    int channel_in, int channel_out, int output_width, int output_height,
-    int kernel_hw, const SPOS& spos) {
-
-//   NODE_PTR input = inputs[0];
+NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(NODE_PTR op0, 
+                                                 NODE_PTR op1,int channel_out, 
+                                                 int output_width, int output_height,
+                                                 const std::vector<int>& ra,
+                                                 const SPOS& spos) {
   _ctx.Incr_num_vloop();
   GLOB_SCOPE* gscope = _cntr->Glob_scope();
   FUNC_SCOPE* fscope = _cntr->Parent_func_scope();
 
-  _ctx.Trace_cmd(TF_LOWER, Trace_float_array, weight->Const(), "gemm weight_diag");
-  NODE_PTR input = inputs[0];
-  // Get and check input type
-  AIR_ASSERT_MSG(input->Rtype()->Is_array(), "conv input is not an array type");
-  ARRAY_TYPE_PTR input_ty_arr = input->Rtype()->Cast_to_arr();
+  // Get and check op0 type
+  AIR_ASSERT_MSG(op0->Rtype()->Is_array(), "op0 is not an array type");
+  ARRAY_TYPE_PTR op0_ty_arr = op0->Rtype()->Cast_to_arr();
 
-  std::vector<int64_t> input_shape = input_ty_arr->Shape();
-  AIR_ASSERT_MSG(input_shape.size() == 1, "conv input dim %d is not 1.",
+  std::vector<int64_t> input_shape = op0_ty_arr->Shape();
+  AIR_ASSERT_MSG(input_shape.size() == 1, "input dim %d is not 1.",
                  input_shape.size());
-
   // Get and check weight type
-  CONSTANT_PTR weight_const = weight->Const();
-  AIR_ASSERT_MSG(weight->Rtype()->Is_array(),
+  CONSTANT_PTR weight_const = op1->Const();
+  AIR_ASSERT_MSG(op1->Rtype()->Is_array(),
                  "conv weight is not an array type.");
-  ARRAY_TYPE_PTR weight_ty_arr = weight->Rtype()->Cast_to_arr();
+  ARRAY_TYPE_PTR weight_ty_arr = op1->Rtype()->Cast_to_arr();
 
   std::vector<int64_t> weight_shape = weight_ty_arr->Shape();
   AIR_ASSERT_MSG(weight_shape.size() == 2, "conv weight const dim is not 2");
 
+  CONST_TYPE_PTR s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
+
   // Build var: result, result_cin, input_dup
   std::vector<int64_t> result_shape{1, channel_out, output_height,
                                     output_width};
-  TYPE_PTR             vtype =
+
+  std::vector<int64_t> op1_shape = weight_ty_arr->Shape();
+
+  int64_t num_rolls = ra.size();
+  int64_t height = op1_shape[0];
+  int64_t padw = op1_shape[1];
+
+  _ctx.Trace_cmd(TF_LOWER, Trace_float_array, op1->Const(), "gemm op1_diag");
+  //for dup input
+  std::vector<int64_t> shape(1, padw);
+
+  // Build var: result
+  TYPE_PTR result_vtype =
       New_array_type(gscope, "type_result_n", _ctx.Get_num_vloop(),
-                     input_ty_arr->Elem_type(), result_shape, spos);
+                     op0_ty_arr->Elem_type(), result_shape, spos);
 
-  // VECTOR result_var = 0
-  ADDR_DATUM_PTR result_var =
-      Gen_store_zero_to_var_stmt("result_n", vtype, spos);
+  TYPE_PTR vtype =
+      New_array_type(gscope, "type_input", _ctx.Get_num_vloop(),
+                     op0_ty_arr->Elem_type(), shape, spos);
 
-  std::string result_cin_str =
-      (std::string("result_cin_n") + std::to_string(_ctx.Get_num_vloop()));
-  ADDR_DATUM_PTR result_cin_var =
-      fscope->New_var(vtype, result_cin_str.c_str(), spos);
-
-  std::string dup_str =
-      (std::string("input_dup_n") + std::to_string(_ctx.Get_num_vloop()));
-  ADDR_DATUM_PTR input_dup_var = fscope->New_var(vtype, dup_str.c_str(), spos);
-
-  CONST_TYPE_PTR s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
-
-  // input_dup = input + roll(input, -output_height*output_width)
-  // duplicate input value channel_in times to make sure later roll works well
-
-  AIR_ASSERT_MSG(channel_out % channel_in == 0,
-                 "channel_out % channel_in == 0 by padding in handle_conv");
-  int dup_num = channel_out / channel_in;
-  _ctx.Trace(TF_LOWER, "dup_num=", dup_num, "\n");
-
-  Gen_dup_input_stmt(input, dup_num, channel_in * output_height * output_width,
-                     input_dup_var, spos);
-
-  // Generate roll loop
-  // loop i 0:ra.size: input_roll[i] = roll(input_dup, ra[i]);
-  STMT_PTR  loop_roll_stmt = New_loop("index_khw1", 0, kernel_hw, spos);
-  STMT_LIST body_roll_sl =
-      STMT_LIST::Enclosing_list(loop_roll_stmt->Node()->Child(3)->End_stmt());
-
-  // Build input_roll[i] with array of array: [[vector0],[vector1]...]
   std::vector<int64_t> ra_shape(1, ra.size());
 
-  TYPE_PTR input_vvtype =
-      New_array_type(gscope, "type_input_roll_vv_n", _ctx.Get_num_vloop(),
-                     vtype, ra_shape, spos);
-  std::string input_roll_str =
-      (std::string("input_roll_n") + std::to_string(_ctx.Get_num_vloop()));
-  ADDR_DATUM_PTR input_roll_var =
-      fscope->New_var(input_vvtype, input_roll_str.c_str(), spos);
-
-  NODE_PTR input_array = _cntr->New_array(
-      _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
-  _cntr->Set_array_idx(input_array, 0,
-                       _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
-
-  // input_roll[i] = ROLL(input_dup, ra[i])
   TYPE_PTR     ra_type  = New_array_type(gscope, "ra_int", _ctx.Get_num_vloop(),
                                          s32_type, ra_shape, spos);
   CONSTANT_PTR ra_const = gscope->New_const(CONSTANT_KIND::ARRAY, ra_type,
                                             (void*)(ra.data()), 4 * ra.size());
   _ctx.Trace_cmd(TF_LOWER, Trace_int_array, ra_const, "conv ra_const");
+  // VECTOR result_var = 0
+  ADDR_DATUM_PTR result_var =
+      Gen_store_zero_to_var_stmt("result_n", result_vtype, spos);
 
+  std::string dup_str =
+    (std::string("input_dup_n") + std::to_string(_ctx.Get_num_vloop()));
+  ADDR_DATUM_PTR input_dup_var = fscope->New_var(vtype, dup_str.c_str(), spos);
+
+  // input_dup = input + roll(input, -width).
+  NODE_PTR input_dup   = op0;
+  NODE_PTR add_dup_node = op0;
+
+  STMT_PTR input_dup_stmt = _cntr->New_st(add_dup_node, input_dup_var, spos);
+  _ctx.Prepend(input_dup_stmt);
+  // Loop to compute input_roll[i] = ROLL(op0, i)
+  STMT_PTR loop_roll_stmt = New_loop("index_roll", 0, ra.size(), spos);
+  STMT_LIST body_roll_sl = 
+      STMT_LIST::Enclosing_list(loop_roll_stmt->Node()->Child(3)->End_stmt());
+
+  // Build input_roll[i] with array of array: [[vector0],[vector1]...]
+  TYPE_PTR input_vvtype =
+    New_array_type(gscope, "type_input_roll_vv_n", _ctx.Get_num_vloop(),
+                vtype, ra_shape, spos);
+  std::string input_roll_str =
+    (std::string("input_roll_n") + std::to_string(_ctx.Get_num_vloop()));
+  ADDR_DATUM_PTR input_roll_var =
+    fscope->New_var(input_vvtype, input_roll_str.c_str(), spos);
+  NODE_PTR input_array = _cntr->New_array(
+    _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
+  _cntr->Set_array_idx(input_array, 0,
+                _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
   NODE_PTR ra_array = _cntr->New_array(
       _cntr->New_ldca(ra_const, POINTER_KIND::FLAT32, spos), 1, spos);
   _cntr->Set_array_idx(ra_array, 0,
                        _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
   NODE_PTR ild_ra = _cntr->New_ild(ra_array, spos);
-
   // st input_roll[i]
   NODE_PTR pre_roll_node =
-      New_roll(_cntr->New_ld(input_dup_var, spos), ild_ra, ra, spos);
+      New_roll(_cntr->New_ld(input_dup_var, spos),
+               _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos), ra, spos);
   STMT_PTR pre_roll_st = _cntr->New_ist(input_array, pre_roll_node, spos);
   body_roll_sl.Append(pre_roll_st);
   _ctx.Prepend(loop_roll_stmt);
+  // Loop over ra.size()
+  STMT_PTR loop_stmt = New_loop("index_gemm_toeplitz", 0, ra.size(), spos);
 
-  // Generate two-level LoopNest: level1 for channel_in, level2 for kernel_size
-  STMT_PTR  loop1_stmt = New_loop("index_cin", 0, channel_in, spos);
-  STMT_LIST body1_sl =
-      STMT_LIST::Enclosing_list(loop1_stmt->Node()->Child(3)->End_stmt());
-
-  // VECTOR result_cin = 0
-  STMT_PTR st0_result_cin_stmt =
-      _cntr->New_st(_cntr->New_zero(vtype, spos), result_cin_var, spos);
-  body1_sl.Append(st0_result_cin_stmt);
-
-  STMT_PTR  loop2_stmt = New_loop("index_khw2", 0, kernel_hw, spos);
-  STMT_LIST body2_sl =
-      STMT_LIST::Enclosing_list(loop2_stmt->Node()->Child(3)->End_stmt());
-
-  // weight_im2col[i1*kernel_hw+i2]
-  NODE_PTR slice_index_node = _cntr->New_bin_arith(
-      air::core::OPCODE::ADD, _cntr->New_ld(loop2_stmt->Node()->Iv(), spos),
-      _cntr->New_bin_arith(
-          air::core::OPCODE::MUL, _cntr->New_ld(loop1_stmt->Node()->Iv(), spos),
-          _cntr->New_intconst(s32_type, kernel_hw, spos), spos),
-      spos);
-
-  NODE_PTR weight_slice =
-      New_slice(weight, slice_index_node,
-                _cntr->New_intconst(
-                    s32_type, output_height * output_width * channel_out, spos),
-                spos);
-
-  NODE_PTR input_array2 = _cntr->New_array(
+  STMT_LIST body_sl = 
+      STMT_LIST::Enclosing_list(loop_stmt->Node()->Child(3)->End_stmt());
+  NODE_PTR slice_index_node = _cntr->New_ld(loop_stmt->Node()->Iv(), spos);
+  NODE_PTR weight_slice = 
+      New_slice(op1, slice_index_node,
+                 _cntr->New_intconst(s32_type, padw, spos), spos);
+  // Get rolled_input = input_roll[index_diag]
+  NODE_PTR input_roll_array_diag = _cntr->New_array(
       _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
-  _cntr->Set_array_idx(input_array2, 0,
-                       _cntr->New_ld(loop2_stmt->Node()->Iv(), spos));
-  NODE_PTR ild_input = _cntr->New_ild(input_array2, spos);
+  _cntr->Set_array_idx(input_roll_array_diag, 0, 
+                      _cntr->New_ld(loop_stmt->Node()->Iv(), spos));
+  NODE_PTR ild_input_diag = _cntr->New_ild(input_roll_array_diag, spos);
+  // Perform element-wise multiplication
+  NODE_PTR vmul_node = New_mul(ild_input_diag, weight_slice, spos);
+  // Accumulate the result
+  NODE_PTR vadd_node = 
+      New_add(_cntr->New_ld(result_var, spos), vmul_node, spos);
+  STMT_PTR vadd_store = _cntr->New_st(vadd_node, result_var, spos);
 
-  NODE_PTR vmul_node = New_mul(ild_input, weight_slice, spos);
+  body_sl.Append(vadd_store);
+  _ctx.Prepend(loop_stmt);
+  Gen_clear_data_stmt(result_var, padw, op0_ty_arr->Elem_type(), spos);
 
-  NODE_PTR vadd_node =
-      New_add(_cntr->New_ld(result_cin_var, spos), vmul_node, spos);
-  STMT_PTR vadd_store = _cntr->New_st(vadd_node, result_cin_var, spos);
-
-  body2_sl.Append(vadd_store);
-
-  NODE_PTR cin_add_node;
-  // TODO: hack here to make resnet conv pass. We process resnet with vector
-  // len=65536.
-  if (channel_out * output_height * output_width == 32768) {
-    _ctx.Trace(TF_LOWER, "roll in loop2: data size=", 32768, "\n");
-    cin_add_node = _cntr->New_ld(result_cin_var, spos);
-  } else {
-    cin_add_node =
-        Gen_dup_input_node(_cntr->New_ld(result_cin_var, spos), 2,
-                           channel_out * output_height * output_width, spos);
-  }
-  std::vector<int> roll_num_left;
-  for (int i = 0; i < channel_in; i++)
-    roll_num_left.push_back(i * output_height * output_width);
-  NODE_PTR cin_roll_node2 = New_roll(
-      cin_add_node,
-      _cntr->New_bin_arith(
-          air::core::OPCODE::MUL, _cntr->New_ld(loop1_stmt->Node()->Iv(), spos),
-          _cntr->New_intconst(s32_type, output_height * output_width, spos),
-          spos),
-      roll_num_left, spos);
-  NODE_PTR cin_add_node2 =
-      New_add(_cntr->New_ld(result_var, spos), cin_roll_node2, spos);
-  STMT_PTR cin_add_st = _cntr->New_st(cin_add_node2, result_var, spos);
-
-  body1_sl.Append(loop2_stmt);
-  body1_sl.Append(cin_add_st);
-
-  // TODO: for channel_in=1, only loop2 is needed.
-  _ctx.Prepend(loop1_stmt);
-
-  // add bias_const
-  STMT_PTR vadd_bias_stmt = _cntr->New_st(
-      New_add(_cntr->New_ld(result_var, spos), bias, spos), result_var, spos);
-  _ctx.Prepend(vadd_bias_stmt);
-
-  // clear zero
-  Gen_clear_data_stmt(result_var, channel_out * output_height * output_width,
-                      input_ty_arr->Elem_type(), spos);
-
+  // Load result
   NODE_PTR ld_result = _cntr->New_ld(result_var, spos);
 
   return ld_result;
 }
+
+// NODE_PTR TENSOR2VECTOR_UTIL::New_gemm_metakernel_toeplitz(
+//     std::vector<NODE_PTR> inputs, NODE_PTR weight, NODE_PTR bias, std::vector<int> ra,
+//     int channel_in, int channel_out, int output_width, int output_height,
+//     int kernel_hw, const SPOS& spos) {
+
+// //   NODE_PTR input = inputs[0];
+//   _ctx.Incr_num_vloop();
+//   GLOB_SCOPE* gscope = _cntr->Glob_scope();
+//   FUNC_SCOPE* fscope = _cntr->Parent_func_scope();
+
+//   _ctx.Trace_cmd(TF_LOWER, Trace_float_array, weight->Const(), "gemm weight_diag");
+//   NODE_PTR input = inputs[0];
+//   // Get and check input type
+//   AIR_ASSERT_MSG(input->Rtype()->Is_array(), "conv input is not an array type");
+//   ARRAY_TYPE_PTR input_ty_arr = input->Rtype()->Cast_to_arr();
+
+//   std::vector<int64_t> input_shape = input_ty_arr->Shape();
+//   AIR_ASSERT_MSG(input_shape.size() == 1, "conv input dim %d is not 1.",
+//                  input_shape.size());
+
+//   // Get and check weight type
+//   CONSTANT_PTR weight_const = weight->Const();
+//   AIR_ASSERT_MSG(weight->Rtype()->Is_array(),
+//                  "conv weight is not an array type.");
+//   ARRAY_TYPE_PTR weight_ty_arr = weight->Rtype()->Cast_to_arr();
+
+//   std::vector<int64_t> weight_shape = weight_ty_arr->Shape();
+//   AIR_ASSERT_MSG(weight_shape.size() == 2, "conv weight const dim is not 2");
+
+//   // Build var: result, result_cin, input_dup
+//   std::vector<int64_t> result_shape{1, channel_out, output_height,
+//                                     output_width};
+//   TYPE_PTR             vtype =
+//       New_array_type(gscope, "type_result_n", _ctx.Get_num_vloop(),
+//                      input_ty_arr->Elem_type(), result_shape, spos);
+
+//   // VECTOR result_var = 0
+//   ADDR_DATUM_PTR result_var =
+//       Gen_store_zero_to_var_stmt("result_n", vtype, spos);
+
+//   std::string result_cin_str =
+//       (std::string("result_cin_n") + std::to_string(_ctx.Get_num_vloop()));
+//   ADDR_DATUM_PTR result_cin_var =
+//       fscope->New_var(vtype, result_cin_str.c_str(), spos);
+
+//   std::string dup_str =
+//       (std::string("input_dup_n") + std::to_string(_ctx.Get_num_vloop()));
+//   ADDR_DATUM_PTR input_dup_var = fscope->New_var(vtype, dup_str.c_str(), spos);
+
+//   CONST_TYPE_PTR s32_type = gscope->Prim_type(PRIMITIVE_TYPE::INT_S32);
+
+//   // input_dup = input + roll(input, -output_height*output_width)
+//   // duplicate input value channel_in times to make sure later roll works well
+
+//   AIR_ASSERT_MSG(channel_out % channel_in == 0,
+//                  "channel_out % channel_in == 0 by padding in handle_conv");
+//   int dup_num = channel_out / channel_in;
+//   _ctx.Trace(TF_LOWER, "dup_num=", dup_num, "\n");
+
+//   Gen_dup_input_stmt(input, dup_num, channel_in * output_height * output_width,
+//                      input_dup_var, spos);
+
+//   // Generate roll loop
+//   // loop i 0:ra.size: input_roll[i] = roll(input_dup, ra[i]);
+//   STMT_PTR  loop_roll_stmt = New_loop("index_khw1", 0, kernel_hw, spos);
+//   STMT_LIST body_roll_sl =
+//       STMT_LIST::Enclosing_list(loop_roll_stmt->Node()->Child(3)->End_stmt());
+
+//   // Build input_roll[i] with array of array: [[vector0],[vector1]...]
+//   std::vector<int64_t> ra_shape(1, ra.size());
+
+//   TYPE_PTR input_vvtype =
+//       New_array_type(gscope, "type_input_roll_vv_n", _ctx.Get_num_vloop(),
+//                      vtype, ra_shape, spos);
+//   std::string input_roll_str =
+//       (std::string("input_roll_n") + std::to_string(_ctx.Get_num_vloop()));
+//   ADDR_DATUM_PTR input_roll_var =
+//       fscope->New_var(input_vvtype, input_roll_str.c_str(), spos);
+
+//   NODE_PTR input_array = _cntr->New_array(
+//       _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
+//   _cntr->Set_array_idx(input_array, 0,
+//                        _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
+
+//   // input_roll[i] = ROLL(input_dup, ra[i])
+//   TYPE_PTR     ra_type  = New_array_type(gscope, "ra_int", _ctx.Get_num_vloop(),
+//                                          s32_type, ra_shape, spos);
+//   CONSTANT_PTR ra_const = gscope->New_const(CONSTANT_KIND::ARRAY, ra_type,
+//                                             (void*)(ra.data()), 4 * ra.size());
+//   _ctx.Trace_cmd(TF_LOWER, Trace_int_array, ra_const, "conv ra_const");
+
+//   NODE_PTR ra_array = _cntr->New_array(
+//       _cntr->New_ldca(ra_const, POINTER_KIND::FLAT32, spos), 1, spos);
+//   _cntr->Set_array_idx(ra_array, 0,
+//                        _cntr->New_ld(loop_roll_stmt->Node()->Iv(), spos));
+//   NODE_PTR ild_ra = _cntr->New_ild(ra_array, spos);
+
+//   // st input_roll[i]
+//   NODE_PTR pre_roll_node =
+//       New_roll(_cntr->New_ld(input_dup_var, spos), ild_ra, ra, spos);
+//   STMT_PTR pre_roll_st = _cntr->New_ist(input_array, pre_roll_node, spos);
+//   body_roll_sl.Append(pre_roll_st);
+//   _ctx.Prepend(loop_roll_stmt);
+
+//   // Generate two-level LoopNest: level1 for channel_in, level2 for kernel_size
+//   STMT_PTR  loop1_stmt = New_loop("index_cin", 0, channel_in, spos);
+//   STMT_LIST body1_sl =
+//       STMT_LIST::Enclosing_list(loop1_stmt->Node()->Child(3)->End_stmt());
+
+//   // VECTOR result_cin = 0
+//   STMT_PTR st0_result_cin_stmt =
+//       _cntr->New_st(_cntr->New_zero(vtype, spos), result_cin_var, spos);
+//   body1_sl.Append(st0_result_cin_stmt);
+
+//   STMT_PTR  loop2_stmt = New_loop("index_khw2", 0, kernel_hw, spos);
+//   STMT_LIST body2_sl =
+//       STMT_LIST::Enclosing_list(loop2_stmt->Node()->Child(3)->End_stmt());
+
+//   // weight_im2col[i1*kernel_hw+i2]
+//   NODE_PTR slice_index_node = _cntr->New_bin_arith(
+//       air::core::OPCODE::ADD, _cntr->New_ld(loop2_stmt->Node()->Iv(), spos),
+//       _cntr->New_bin_arith(
+//           air::core::OPCODE::MUL, _cntr->New_ld(loop1_stmt->Node()->Iv(), spos),
+//           _cntr->New_intconst(s32_type, kernel_hw, spos), spos),
+//       spos);
+
+//   NODE_PTR weight_slice =
+//       New_slice(weight, slice_index_node,
+//                 _cntr->New_intconst(
+//                     s32_type, output_height * output_width * channel_out, spos),
+//                 spos);
+
+//   NODE_PTR input_array2 = _cntr->New_array(
+//       _cntr->New_lda(input_roll_var, POINTER_KIND::FLAT32, spos), 1, spos);
+//   _cntr->Set_array_idx(input_array2, 0,
+//                        _cntr->New_ld(loop2_stmt->Node()->Iv(), spos));
+//   NODE_PTR ild_input = _cntr->New_ild(input_array2, spos);
+
+//   NODE_PTR vmul_node = New_mul(ild_input, weight_slice, spos);
+
+//   NODE_PTR vadd_node =
+//       New_add(_cntr->New_ld(result_cin_var, spos), vmul_node, spos);
+//   STMT_PTR vadd_store = _cntr->New_st(vadd_node, result_cin_var, spos);
+
+//   body2_sl.Append(vadd_store);
+
+//   NODE_PTR cin_add_node;
+//   // TODO: hack here to make resnet conv pass. We process resnet with vector
+//   // len=65536.
+//   if (channel_out * output_height * output_width == 32768) {
+//     _ctx.Trace(TF_LOWER, "roll in loop2: data size=", 32768, "\n");
+//     cin_add_node = _cntr->New_ld(result_cin_var, spos);
+//   } else {
+//     cin_add_node =
+//         Gen_dup_input_node(_cntr->New_ld(result_cin_var, spos), 2,
+//                            channel_out * output_height * output_width, spos);
+//   }
+//   std::vector<int> roll_num_left;
+//   for (int i = 0; i < channel_in; i++)
+//     roll_num_left.push_back(i * output_height * output_width);
+//   NODE_PTR cin_roll_node2 = New_roll(
+//       cin_add_node,
+//       _cntr->New_bin_arith(
+//           air::core::OPCODE::MUL, _cntr->New_ld(loop1_stmt->Node()->Iv(), spos),
+//           _cntr->New_intconst(s32_type, output_height * output_width, spos),
+//           spos),
+//       roll_num_left, spos);
+//   NODE_PTR cin_add_node2 =
+//       New_add(_cntr->New_ld(result_var, spos), cin_roll_node2, spos);
+//   STMT_PTR cin_add_st = _cntr->New_st(cin_add_node2, result_var, spos);
+
+//   body1_sl.Append(loop2_stmt);
+//   body1_sl.Append(cin_add_st);
+
+//   // TODO: for channel_in=1, only loop2 is needed.
+//   _ctx.Prepend(loop1_stmt);
+
+//   // add bias_const
+//   STMT_PTR vadd_bias_stmt = _cntr->New_st(
+//       New_add(_cntr->New_ld(result_var, spos), bias, spos), result_var, spos);
+//   _ctx.Prepend(vadd_bias_stmt);
+
+//   // clear zero
+//   Gen_clear_data_stmt(result_var, channel_out * output_height * output_width,
+//                       input_ty_arr->Elem_type(), spos);
+
+//   NODE_PTR ld_result = _cntr->New_ld(result_var, spos);
+
+//   return ld_result;
+// }
 
 ADDR_DATUM_PTR TENSOR2VECTOR_UTIL::Combine_cross_row(
     ADDR_DATUM_PTR input_var, ARRAY_TYPE_PTR ty_arr, int64_t channel,

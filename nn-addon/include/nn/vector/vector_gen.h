@@ -37,6 +37,10 @@ public:
                                         int                    channel,
                                         const air::base::SPOS& spos);
 
+  air::base::NODE_PTR New_concat_output_node(CONTAINER* cntr, 
+                        std::vector<NODE_PTR>& input, 
+                        const SPOS& spos, int ignore_n);
+
   //! @brief New MUL node
   air::base::NODE_PTR New_mul(air::base::NODE_PTR op0, air::base::NODE_PTR op1,
                               const air::base::SPOS& spos);

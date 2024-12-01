@@ -76,6 +76,32 @@ NODE_PTR VECTOR_GEN::New_strided_slice(NODE_PTR             op0,
   return slice_node;
 }
 
+NODE_PTR VECTOR_GEN::New_concat_output_node(CONTAINER* cntr, 
+                        std::vector<NODE_PTR>& input, 
+                        const SPOS& spos, int ignore_n) {
+
+  size_t num_inputs = input.size();
+
+  // Helper function to recursively build the tree of concatenated nodes
+  std::function<NODE_PTR(size_t, size_t)> build_concat_tree = [&](size_t start, size_t end) -> NODE_PTR {
+    if (start == end) {
+      return input[start];
+    }
+
+    size_t mid = start + (end - start) / 2;
+    NODE_PTR left = build_concat_tree(start, mid);
+    NODE_PTR right = build_concat_tree(mid + 1, end);
+
+    // Create a concatenation node for the left and right subtrees
+    return cntr->New_bin_arith(
+        air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT), left, right, spos);
+    std::cout <<"bin end \n";
+  };
+
+  // Build the tree for the inputs except the last n
+  return build_concat_tree(0, num_inputs - ignore_n - 1);
+}
+
 NODE_PTR VECTOR_GEN::New_slice(NODE_PTR op0, NODE_PTR start_indices,
                                NODE_PTR slice_size, const SPOS& spos) {
   GLOB_SCOPE*          gscope = _cntr->Glob_scope();

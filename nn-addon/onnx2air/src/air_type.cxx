@@ -82,7 +82,7 @@ bool AIRTYGEN::ShouldChunkTensor(TYPE_PTR tensor_type) {
     total_elements *= dim_size;
   }
 
-  int slot_capacity = 32768;
+  int slot_capacity = 512;
 
   // Determine if chunking is necessary
   return total_elements > slot_capacity;
@@ -102,7 +102,7 @@ int AIRTYGEN::GetNumChannels(TYPE_PTR tensor_type) {
 int AIRTYGEN::CalculateChunksPerChannel(TYPE_PTR tensor_type) {
   int H = tensor_type->Cast_to_arr()->Shape()[2]; // Height
   int W = tensor_type->Cast_to_arr()->Shape()[3]; // Width
-  int slot_capacity = 32768;
+  int slot_capacity = 512;
   int rows_per_chunk = slot_capacity / W;
 
   int num_channels = GetNumChannels(tensor_type);

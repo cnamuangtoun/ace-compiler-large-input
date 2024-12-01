@@ -13,6 +13,7 @@
 #include "nn/onnx2air/air_const.h"
 #include "nn/onnx2air/air_gen.h"
 #include "nn/onnx2air/air_utils.h"
+#include "nn/onnx2air/air_type.h"
 #include "onnx.pb.h"
 
 namespace nn {
@@ -55,13 +56,31 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
       // Retrieve chunking information
       const int* num_channels = type->Attr<int>("num_channels");
       const int* chunks_per_channel = type->Attr<int>("chunks_per_channel");
+      TYPE_PTR base_type = type->Cast_to_arr()->Elem_type();
+      std::vector<int64_t> data_dim = type->Cast_to_arr()->Shape();
+      int slot_capacity = 512;
+      int rows_per_chunk = slot_capacity / data_dim[3];
 
       // Create parameters for each chunk
       for (int c = 0; c < *num_channels; ++c) {
+        int rows_consumed = 0;
         for (int i = 0; i < *chunks_per_channel; ++i) {
+          rows_consumed += rows_per_chunk;
+          std::vector<int> data_dim_new(data_dim.size());
+          std::copy(data_dim.begin(), data_dim.end(), data_dim_new.begin());
+          data_dim_new[1] = 1;
+          if (rows_consumed <= data_dim[2]) {
+            data_dim_new[2] = rows_per_chunk;
+          } else {
+            data_dim_new[2] = data_dim[2] - (rows_consumed - rows_per_chunk);
+          }
+          TYPE_PTR new_type = Create_tensor_type(base_type, data_dim_new, Get_airgen()->Get_glob());
+          new_type->Set_attr<int>("is_chunked", is_chunked, 1);
+          new_type->Set_attr<int>("num_channels", num_channels, 1);
+          new_type->Set_attr<int>("chunks_per_channel", chunks_per_channel, 1);
           std::string chunk_name = arg._name + "_channel_" + std::to_string(c) + "_chunk_" + std::to_string(i);
           STR_PTR param_str = glob->New_str(chunk_name.c_str());
-          glob->New_param(param_str, type, sig, spos);
+          glob->New_param(param_str, new_type, sig, spos);
         }
       }
     } else {
@@ -112,6 +131,52 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
     }
   }
 
+  // for (auto ret : ret_node) {
+  //   // Generates the output symbol in the onnx graph.
+  //   TYPE_PTR type = ret._ty_ptr;
+  //   const int* is_chunked = type->Attr<int>("is_chunked");
+  //   if (*is_chunked) {
+  //     // Retrieve chunking information
+  //     const int* num_channels = type->Attr<int>("num_channels");
+  //     const int* chunks_per_channel = type->Attr<int>("chunks_per_channel");
+  //     TYPE_PTR base_type = type->Cast_to_arr()->Elem_type();
+  //     std::vector<int64_t> data_dim = type->Cast_to_arr()->Shape();
+  //     int slot_capacity = 512;
+  //     int rows_per_chunk = slot_capacity / data_dim[3];
+      
+  //     std::vector<ADDR_DATUM_PTR> chunked_rets;
+  //     // Create parameters for each chunk
+  //     for (int c = 0; c < *num_channels; ++c) {
+  //       int rows_consumed = 0;
+  //       for (int i = 0; i < *chunks_per_channel; ++i) {
+  //         rows_consumed += rows_per_chunk;
+  //         std::vector<int> data_dim_new(data_dim.size());
+  //         std::copy(data_dim.begin(), data_dim.end(), data_dim_new.begin());
+  //         data_dim_new[1] = 1;
+  //         if (rows_consumed <= data_dim[2]) {
+  //           data_dim_new[2] = rows_per_chunk;
+  //         } else {
+  //           data_dim_new[2] = data_dim[2] - (rows_consumed - rows_per_chunk);
+  //         }
+  //         TYPE_PTR new_type = Create_tensor_type(base_type, data_dim_new, Get_airgen()->Get_glob());
+  //         new_type->Set_attr<int>("is_chunked", is_chunked, 1);
+  //         new_type->Set_attr<int>("num_channels", num_channels, 1);
+  //         new_type->Set_attr<int>("chunks_per_channel", chunks_per_channel, 1);
+  //         std::string chunk_name = ret._name + "_channel_" + std::to_string(c) + "_chunk_" + std::to_string(i);
+  //         std::cout << "Generate chunk name: " <<  chunk_name << "\n";
+  //         ADDR_DATUM_PTR st_ptr = Generate_sym(chunk_name, new_type, func_scope);
+  //         chunked_rets.push_back(st_ptr);
+  //       }
+  //     }
+  //     ADDR_DATUM_PTR st_ptr = Generate_sym(ret._name, ret._ty_ptr, func_scope);
+  //     _output_sts.push_back(st_ptr);
+  //     _chunked_parameters[ret._name] = chunked_rets;
+  //   } else {
+  //     ADDR_DATUM_PTR st_ptr = Generate_sym(ret._name, ret._ty_ptr, func_scope);
+  //     _output_sts.push_back(st_ptr);
+  //   }
+  // }
+
   for (auto ret : ret_node) {
     // Generates the output symbol in the onnx graph.
     ADDR_DATUM_PTR st_ptr = Generate_sym(ret._name, ret._ty_ptr, func_scope);
@@ -136,7 +201,7 @@ FUNC_SCOPE* AIRSYMGEN::Create_function(const char*                  func_name,
 
 int AIRSYMGEN::GetRowsPerChunk(TYPE_PTR type) {
   int W = type->Cast_to_arr()->Shape()[3];
-  int slot_capacity = 32768;
+  int slot_capacity = 512;
   return slot_capacity / W;
 }
 
@@ -186,10 +251,16 @@ NAME_MAP AIRSYMGEN::Get_result(const std::string name) {
   PREG_PTR preg = Get_preg(name);
   if (preg != air::base::Null_ptr) return NAME_MAP::New_preg(preg);
 
-  // Check if the name corresponds to chunked parameters
-  auto it = _chunked_parameters.find(name);
-  if (it != _chunked_parameters.end()) {
-    return NAME_MAP::New_sym_list(it->second);
+  // Check if the name corresponds to chunked parameter
+  auto it1 = _chunked_parameters.find(name);
+  if (it1 != _chunked_parameters.end()) {
+    return NAME_MAP::New_sym_list(it1->second);
+  }
+
+ // Check if the name corresponds to chunked preg
+  auto it2 = _chunked_pregs.find(name);
+  if (it2 != _chunked_pregs.end()) {
+    return NAME_MAP::New_preg_list(it2->second);
   }
 
   // Name not found

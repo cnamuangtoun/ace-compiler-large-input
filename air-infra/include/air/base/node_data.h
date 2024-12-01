@@ -113,6 +113,8 @@ private:
       } _ofst_acc;
     } _u4;
   } _uu;
+
+  // std::vector<uint32_t> _preg_list;
 };
 
 class STMT_DATA {

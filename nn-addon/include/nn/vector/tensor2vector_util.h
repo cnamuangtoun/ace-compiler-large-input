@@ -28,16 +28,14 @@ public:
                                const SPOS& spos);
   NODE_PTR New_gemm_metakernel_fast(NODE_PTR op0, NODE_PTR op1, NODE_PTR op2,
                                     const SPOS& spos, bool tiling);
-  // NODE_PTR New_gemm_metakernel_toeplitz(NODE_PTR op0, NODE_PTR op1, NODE_PTR op2, 
-  //                                       int output_height, int output_width,
-  //                                       int n1, int n2,
-  //                                       const std::vector<int>& ra,
-  //                                       const SPOS& spos);
-  NODE_PTR New_gemm_metakernel_toeplitz(std::vector<NODE_PTR> inputs, NODE_PTR weight, 
-                                        NODE_PTR bias, std::vector<int> ra,
-                                        int channel_in, int channel_out, 
-                                        int output_width, int output_height,
-                                        int kernel_hw, const SPOS& spos);
+  NODE_PTR New_gemm_metakernel_toeplitz(NODE_PTR op0, NODE_PTR op1, int channel_out, 
+                               int output_width, int output_height,
+                               const std::vector<int>& ra, const SPOS& spos);
+  // NODE_PTR New_gemm_metakernel_toeplitz(std::vector<NODE_PTR> inputs, NODE_PTR weight, 
+  //                                       NODE_PTR bias, std::vector<int> ra,
+  //                                       int channel_in, int channel_out, 
+  //                                       int output_width, int output_height,
+  //                                       int kernel_hw, const SPOS& spos);
   NODE_PTR New_conv_metakernel(NODE_PTR input, NODE_PTR weight, NODE_PTR bias,
                                std::vector<int> ra, int channel_in,
                                int channel_out, int output_height,
@@ -72,6 +70,9 @@ public:
   void Gen_combine_cross_channel(ADDR_DATUM_PTR input_var, int64_t channel,
                                  int64_t ih, int64_t iw, int64_t oh, int64_t ow,
                                  const SPOS& spos);
+  
+  ADDR_DATUM_PTR Gen_store_zero_to_var_stmt(std::string var_name,
+                                            TYPE_PTR vtype, const SPOS& spos);
 
 private:
   ADDR_DATUM_PTR Roll_valid_to_start(ADDR_DATUM_PTR input_var,
@@ -105,9 +106,7 @@ private:
   ADDR_DATUM_PTR Gen_store_zero_to_var_stmt(
       std::string var_name, std::string ty_name, ARRAY_TYPE_PTR ty_arr,
       const std::vector<int64_t>& var_shape, const SPOS& spos);
-
-  ADDR_DATUM_PTR Gen_store_zero_to_var_stmt(std::string var_name,
-                                            TYPE_PTR vtype, const SPOS& spos);
+  
   //! roll input, multiply mask, add to result
   void Gen_loop_combine_stmt(const char* loop_name, int loop_ub,
                              int elem_interval, ADDR_DATUM_PTR input_var,

@@ -20,6 +20,7 @@ namespace nn {
 namespace vector {
 
 using PREG_MAP = std::unordered_map<uint32_t, uint32_t>;
+using PREG_LIST_MAP = std::unordered_map<uint32_t, std::vector<uint32_t> >;
 
 // For node tracing
 const auto Trace_node = [](std::ostream& os, air::base::NODE_PTR op) {
@@ -59,9 +60,15 @@ public:
   DECLARE_TRACE_DETAIL_API(_config, _driver_ctx)
 
   PREG_MAP& Get_t2v_preg_map() { return _t2v_preg_map; }
+  
+  PREG_LIST_MAP& Get_t2v_preg_list_map() { return _t2v_preg_list_map; }
 
   void Insert_t2v_preg_map(std::pair<uint32_t, uint32_t> preg_pair) {
     _t2v_preg_map.insert(preg_pair);
+  }
+
+  void Insert_t2v_preg_list_map(std::pair<uint32_t, std::vector<uint32_t>> preg_pair) {
+    _t2v_preg_list_map.insert(preg_pair);
   }
 
 private:
@@ -69,6 +76,7 @@ private:
   const air::driver::DRIVER_CTX* _driver_ctx;
   const VECTOR_CONFIG&           _config;
   PREG_MAP                       _t2v_preg_map;
+  PREG_LIST_MAP                  _t2v_preg_list_map;
 };
 
 }  // namespace vector

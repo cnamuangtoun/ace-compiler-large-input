@@ -88,6 +88,11 @@ public:
                                                  std::vector<int>& pads,
                                                  std::vector<int>& kernel_shape);
 
+  void ConcatInputsToTree(CONTAINER* cntr, 
+                                      std::vector<NODE_PTR>& input, 
+                                      const SPOS& spos, int ignore_n, 
+                                      NODE_PTR& concatenated_tree);
+
   void Update_attributes(onnx::NodeProto* onnx_node, NODE_PTR node);
 
 private:
