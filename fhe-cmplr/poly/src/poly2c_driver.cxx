@@ -196,22 +196,33 @@ void POLY2C_DRIVER::Emit_helper_function(FUNC_SCOPE* func_scope) {
   _ctx << "  return scheme[idx];\n";
   _ctx << "}\n\n";
 
+  std::vector<std::string> output_names = _ctx.Output_names();
+
   // int Get_output_count()
   _ctx << "int Get_output_count() {\n";
-  _ctx << "  return 1;\n";
+  _ctx << "  return " << output_names.size() << ";\n";
   _ctx << "}\n\n";
 
-  // DATA_SCHEME Get_decode_scheme()
   _ctx << "DATA_SCHEME* Get_decode_scheme(int idx) {\n";
-  _ctx << "  static DATA_SCHEME scheme = {\n";
-  // output data name
-  _ctx << "    \"" << _ctx.Output_name() << "\", ";
-  // output data shape
-  _ctx << "{0, 0, 0, 0}, ";
-  // output data decode scheme
-  _ctx << "1, {NORMAL, 0, 0, 0, 0}\n";
-  _ctx << "  };\n";
-  _ctx << "  return &scheme;\n";
+  for (uint32_t i = 0; i < output_names.size(); ++i) {
+    _ctx << "  static DATA_SCHEME scheme_" << i << " = {\n";
+    // output name
+    _ctx << "    \"" << output_names[i].c_str() << "\", ";
+    // input data shape
+    _ctx << "{0, 0, 0, 0}, ";
+    // input data encode scheme
+    _ctx << "1, {NORMAL, 0, 0, 0, 0}\n";
+    _ctx << "  };\n";
+  }
+  _ctx << "  static DATA_SCHEME* scheme[] = { ";
+  for (uint32_t i = 0; i < output_names.size(); ++i) {
+    if (i > 0) {
+      _ctx << ", ";
+    }
+    _ctx << "&scheme_" << i;
+  }
+  _ctx << " };\n";
+  _ctx << "  return scheme[idx];\n";
   _ctx << "}\n\n";
 }
 

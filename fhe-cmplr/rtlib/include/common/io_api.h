@@ -24,6 +24,12 @@ void Io_init();
 //! @brief finalize input/output data structure
 void Io_fini();
 
+//! @brief stores metadata associated with a name
+void Io_set_metadata(const char* name, const char* data);
+
+//! @brief retrieves metadata associated with a name
+char* Io_get_metadata(const char* name);
+
 //! @brief set ciphertext to input data, called at client side
 void Io_set_input(const char* name, size_t idx, void* ct);
 

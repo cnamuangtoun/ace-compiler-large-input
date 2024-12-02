@@ -89,6 +89,9 @@ public:
       NODE_PTR new_ld = visitor->template Visit<RETV>(input);
       NODE_PTR op     = visitor->Context().Container()->Clone_node(node);
       op->Set_child(0, new_ld->Id());
+      op->Rtype()->Set_attr<int>("is_chunked", orig_input->Rtype()->Attr<int>("is_chunked"), 1);
+      op->Rtype()->Set_attr<int>("chunks_per_channel", orig_input->Rtype()->Attr<int>("chunks_per_channel"), 1);
+      op->Rtype()->Set_attr<int>("num_channels", orig_input->Rtype()->Attr<int>("num_channels"), 1);
       outputs.push_back(op);
     }
 

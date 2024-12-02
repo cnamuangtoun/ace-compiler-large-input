@@ -26,11 +26,81 @@ class CORE_HANDLER : public air::core::DEFAULT_HANDLER {
 public:
   template <typename RETV, typename VISITOR>
   RETV Handle_ld(VISITOR* visitor, air::base::NODE_PTR node) {
+    TENSOR2VECTOR_CTX& ctx  = visitor->Context();
     CONTAINER*     cntr = visitor->Context().Container();
     ADDR_DATUM_PTR data =
         cntr->Parent_func_scope()->Addr_datum(node->Addr_datum_id());
-    NODE_PTR new_load = cntr->New_ld(data, node->Spos());
+
+    SYM_LIST_MAP t2v_sym_list_map   = ctx.Get_t2v_sym_list_map();
+    SYM_LIST_MAP::iterator iter = t2v_sym_list_map.find(data->Id().Value());
+    std::cout << "Handle_ld - Original Sym ID: " << data->Id().Value() << "\n";
+    NODE_PTR new_load;
+
+    if (iter != t2v_sym_list_map.end()) {
+      std::vector<NODE_PTR> load_list;
+      for (const auto& cur_iter : iter->second) {
+        std::cout << "can find \n";
+        ADDR_DATUM_PTR used_sym =
+          cntr->Parent_func_scope()->Addr_datum(ADDR_DATUM_ID(cur_iter));
+        NODE_PTR new_load = cntr->New_ld(used_sym, node->Spos());
+        const int* is_chunked = new_load->Rtype()->Attr<int>("is_chunked");
+        if (is_chunked && *is_chunked) {
+          std::cout << "ldp chunked \n";
+        } else {
+          std::cout << "ldp not chunked \n";
+        }
+        load_list.push_back(new_load);
+      }
+      ConcatInputsToTree(cntr, load_list, node->Spos(), 0, new_load);
+    } else {
+      std::cout << "cannot find \n";
+      new_load = cntr->New_ld(data, node->Spos());
+    }
+    
+    new_load->Print_tree(std::cout);
     return RETV(new_load);
+  }
+
+  template <typename RETV, typename VISITOR>
+  RETV Handle_retv(VISITOR* visitor, air::base::NODE_PTR node) {
+    TENSOR2VECTOR_CTX& ctx  = visitor->Context();
+    CONTAINER*         cntr = visitor->Context().Container();
+    NODE_PTR child = Node(visitor->template Visit<RETV>(node->Child(0)));
+    std::vector<NODE_PTR> inputs;
+
+    std::cout << "handle retv: \n";
+
+    const int* is_chunked = child->Rtype()->Attr<int>("is_chunked");
+    if (is_chunked && *is_chunked) {
+      std::cout << "concat node is chunked \n";
+    } else {
+      std::cout << "concat node is not chunked \n";
+    }
+
+    if (child->Opcode() == air::base::OPCODE(nn::core::NN, nn::core::OPCODE::CONCAT)) {
+      inputs = CollectChunks<RETV>(child, visitor);
+      std::cout << "chunk input size: " << inputs.size() << "\n";
+    } else {
+      STMT_PTR new_store = cntr->New_retv(child, node->Spos());
+      return RETV(new_store->Node());
+    }
+
+    std::cout << "input size st: " << inputs.size() << "\n";
+    STMT_PTR new_store;
+    int leaf_index = 0;
+    for (auto leaf_node : inputs) {
+      const int* is_chunked = leaf_node->Rtype()->Attr<int>("is_chunked");
+      if (is_chunked && *is_chunked) {
+        std::cout << "chunked \n";
+      } else {
+        std::cout << "not chunked \n";
+      }
+      STMT_PTR new_store = cntr->New_retv(leaf_node, node->Spos());
+      ctx.Prepend(new_store);
+      new_store->Node()->Print_tree(std::cout);
+    }
+
+    return RETV();
   }
 
   template <typename RETV, typename VISITOR>
@@ -62,7 +132,8 @@ public:
 
     std::cout << "input size st: " << inputs.size() << "\n";
     STMT_PTR new_store;
-    std::vector<uint32_t> preg_ids;
+    std::vector<uint32_t> sym_ids;
+    int leaf_index = 0;
     for (auto leaf_node : inputs) {
       const int* is_chunked = leaf_node->Rtype()->Attr<int>("is_chunked");
       if (is_chunked && *is_chunked) {
@@ -70,10 +141,23 @@ public:
       } else {
         std::cout << "not chunked \n";
       }
-      STMT_PTR new_store = cntr->New_st(leaf_node, data, node->Spos());
+      const int* chunks_per_channel = leaf_node->Rtype()->Attr<int>("chunks_per_channel");
+      std::cout << "st name: " << data->Name()->Char_str() << "\n";
+      const std::string chunk_name = 
+        std::string(data->Name()->Char_str()) + 
+        "_channel_" + 
+        std::to_string(leaf_index / *chunks_per_channel) + 
+        "_chunk_" + 
+        std::to_string(leaf_index % *chunks_per_channel);
+      ADDR_DATUM_PTR var  = cntr->Parent_func_scope()->New_var(leaf_node->Rtype(), chunk_name.c_str(), node->Spos());
+      leaf_index++;
+      STMT_PTR new_store = cntr->New_st(leaf_node, var, node->Spos());
+      sym_ids.push_back(var->Id().Value());
       ctx.Prepend(new_store);
       new_store->Node()->Print_tree(std::cout);
     }
+
+    ctx.Insert_t2v_sym_list_map({data->Id().Value(), sym_ids});
 
     return RETV();
   }

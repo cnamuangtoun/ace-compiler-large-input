@@ -64,6 +64,7 @@ AIRTYGEN::Convert_io_tensor_type(onnx::ValueInfoProto& vi) {
     
     // Calculate chunking information
     int num_channels = GetNumChannels(tensor_type);
+    std::cout << "num_channels: " << num_channels << "\n";
     tensor_type->Set_attr<int>("num_channels", &num_channels, 1);
     int chunks_per_channel = CalculateChunksPerChannel(tensor_type);
     tensor_type->Set_attr<int>("chunks_per_channel", &chunks_per_channel, 1);

@@ -58,15 +58,18 @@ void Prepare_input_large(TENSOR* input, const char* name) {
   size_t W = TENSOR_W(input); // Width of the image
 
   size_t slot_capacity = 512;
-  size_t chunk_idx = 0;
+
+  printf("C: %d, H: %d, W: %d\n", C, H, W);
 
   for (size_t c = 0; c < C; ++c) { // Iterate over each channel
+    size_t chunk_idx = 0;
     for (size_t h = 0; h < H; h += slot_capacity / W) { // Divide the height
       size_t rows_to_process = (h + slot_capacity / W > H)
                                     ? H - h
                                     : slot_capacity / W;
 
       size_t chunk_len = rows_to_process * W; // Number of elements in this chunk
+      printf("chunk_len: %d\n", chunk_len);
 
       VALUE_LIST* chunk_vec = Alloc_value_list(DCMPLX_TYPE, chunk_len);
 
@@ -78,7 +81,8 @@ void Prepare_input_large(TENSOR* input, const char* name) {
       }
 
       char chunk_name[64];
-      sprintf(chunk_name, "%s_channel_%zu_chunk_%zu", name, c, chunk_idx % (C+1));
+      sprintf(chunk_name, "%s_channel_%zu_chunk_%zu", name, c, chunk_idx);
+      printf("input chunk name: %s\n", chunk_name);
 
       PLAINTEXT* plain = Alloc_plaintext();
       ENCODE(plain, (CKKS_ENCODER*)Context->_encoder, chunk_vec);
@@ -96,6 +100,7 @@ void Prepare_input_large(TENSOR* input, const char* name) {
 
 double* Handle_output(const char* name) {
   // decrypt & decode
+  printf("Get output nam: %s\n", name);
   CIPHER ciph = (CIPHER)Io_get_output(name, 0);
   IS_TRUE(ciph != NULL, "not find data");
   PLAINTEXT* plain = Alloc_plaintext();
@@ -121,6 +126,7 @@ CIPHERTEXT Get_input_data(const char* name, size_t idx) {
 }
 
 void Set_output_data(const char* name, size_t idx, CIPHER data) {
+  printf("Set output nam: %s\n", name);
   CIPHER output = Alloc_ciphertext();
   Copy_ciph(output, data);
   Free_ciph_poly(data, 1);

@@ -47,15 +47,15 @@ public:
 
   const core::LOWER_CTX& Lower_ctx() { return _lower_ctx; }
 
-  void        Set_output_name(const char* name) { _output_name = name; }
-  const char* Output_name() const { return _output_name.c_str(); }
+  void        Add_output_name(const char* name) { _output_names.push_back(name); }
+  std::vector<std::string> Output_names() const { return _output_names; }
 
   DECLARE_POLY2C_CONFIG_ACCESS_API(_config)
 
 private:
   // lower context
   const core::LOWER_CTX&          _lower_ctx;
-  std::string                     _output_name;
+  std::vector<std::string>        _output_names;
   const fhe::poly::POLY2C_CONFIG& _config;
 
 };  // IR2C_CTX

@@ -19,13 +19,64 @@ typedef struct {
   void*       _ct[];
 } IO_DATA;
 
+typedef struct MetadataEntry {
+    char* name;                  
+    char* data;                  
+    struct MetadataEntry* next;  
+} MetadataEntry;
+
 static IO_DATA** Input_data;
 static IO_DATA** Output_data;
 #pragma omp threadprivate(Input_data)
 #pragma omp threadprivate(Output_data)
 
+static MetadataEntry* metadata_head = NULL;
+
+void Io_set_metadata(const char* name, const char* data) {
+    // Create a new metadata entry
+    MetadataEntry* entry = (MetadataEntry*)malloc(sizeof(MetadataEntry));
+    if (!entry) {
+        fprintf(stderr, "Memory allocation failed in Io_set_metadata\n");
+        exit(EXIT_FAILURE);
+    }
+    entry->name = strdup(name);
+    entry->data = strdup(data);
+    entry->next = metadata_head;
+    metadata_head = entry;
+}
+
+char* Io_get_metadata(const char* name) {
+  MetadataEntry* current = metadata_head;
+  MetadataEntry* previous = NULL;
+
+  while (current != NULL) {
+    if (strcmp(current->name, name) == 0) {
+    // Found the entry
+    char* data = current->data;
+
+    // Remove the entry from the list
+    if (previous == NULL) {
+      // Entry is at the head
+      metadata_head = current->next;
+    } else {
+      previous->next = current->next;
+    }
+
+    // Free the entry structure but not the data
+    free(current->name);
+    free(current);
+
+    return data; // Caller is responsible for freeing 'data'
+  }
+    previous = current;
+    current = current->next;
+  }
+  return NULL; // Not found
+}
+
 static void Io_set_data(IO_DATA** data, const char* name, size_t idx,
                         void* ct) {
+  printf("set data: %s \n", name);
   while (*data != NULL) {
     if (strcmp((*data)->_name, name) == 0) {
       FMT_ASSERT(idx < (*data)->_count, "index out of bounds\n");
@@ -38,6 +89,7 @@ static void Io_set_data(IO_DATA** data, const char* name, size_t idx,
 }
 
 static void* Io_get_data(IO_DATA** data, const char* name, size_t idx) {
+  printf("get data: %s \n", name);
   while (*data != NULL) {
     if (strcmp((*data)->_name, name) == 0) {
       FMT_ASSERT(idx < (*data)->_count, "index out of bounds\n");

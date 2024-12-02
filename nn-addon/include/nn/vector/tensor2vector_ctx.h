@@ -21,6 +21,7 @@ namespace vector {
 
 using PREG_MAP = std::unordered_map<uint32_t, uint32_t>;
 using PREG_LIST_MAP = std::unordered_map<uint32_t, std::vector<uint32_t> >;
+using SYM_LIST_MAP = std::unordered_map<uint32_t, std::vector<uint32_t> >;
 
 // For node tracing
 const auto Trace_node = [](std::ostream& os, air::base::NODE_PTR op) {
@@ -48,7 +49,9 @@ public:
         _ctx(ctx),
         _driver_ctx(driver_ctx),
         _config(cfg),
-        _t2v_preg_map() {}
+        _t2v_preg_map(),
+        _t2v_preg_list_map(),
+        _t2v_sym_list_map() {}
 
   // declare access API for VECTOR_CTX
   DECLARE_VECTOR_CTX_ACCESS_API(_ctx)
@@ -63,6 +66,8 @@ public:
   
   PREG_LIST_MAP& Get_t2v_preg_list_map() { return _t2v_preg_list_map; }
 
+  SYM_LIST_MAP& Get_t2v_sym_list_map() { return _t2v_sym_list_map; }
+
   void Insert_t2v_preg_map(std::pair<uint32_t, uint32_t> preg_pair) {
     _t2v_preg_map.insert(preg_pair);
   }
@@ -71,12 +76,17 @@ public:
     _t2v_preg_list_map.insert(preg_pair);
   }
 
+  void Insert_t2v_sym_list_map(std::pair<uint32_t, std::vector<uint32_t>> sym_pair) {
+    _t2v_sym_list_map.insert(sym_pair);
+  }
+
 private:
   VECTOR_CTX&                    _ctx;
   const air::driver::DRIVER_CTX* _driver_ctx;
   const VECTOR_CONFIG&           _config;
   PREG_MAP                       _t2v_preg_map;
   PREG_LIST_MAP                  _t2v_preg_list_map;
+  SYM_LIST_MAP                   _t2v_sym_list_map;
 };
 
 }  // namespace vector
